@@ -57,7 +57,7 @@ var routerTemplate *template.Template
 func init() {
 	var err error
 	if routerTemplate, err = readTemplateFromFile("router", "router.tpl"); err != nil {
-		log.Fatal(err)
+		logger.Fatal(err)
 	}
 }
 
@@ -78,7 +78,7 @@ func createRouter(paths *spec.Paths) (router routerData, err error) {
 	var r routeData
 
 	for path, pathItem := range paths.Paths {
-		logger = log.WithField("path", path)
+		logger = logger.WithField("path", path)
 
 		if pathItem.Get != nil {
 			if r, err = createRouteData(http.MethodGet, path, pathItem.Get, pathItem.Parameters); err != nil {

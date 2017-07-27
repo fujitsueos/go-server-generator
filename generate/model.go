@@ -4,9 +4,8 @@ import (
 	"errors"
 	"io"
 	"sort"
-	"text/template"
-
 	"strings"
+	"text/template"
 
 	"github.com/go-openapi/spec"
 	log "github.com/sirupsen/logrus"
@@ -20,18 +19,40 @@ type modelData struct {
 }
 
 type typeData struct {
+	// general fields
 	Name        string
 	Description string
-	Type        string
-	Props       []propsData
-	RefType     string
+	Validation  validation
+
+	// struct fields
+	IsStruct bool
+	Props    []propsData
+
+	// slice fields
+	IsSlice        bool
+	ItemType       string
+	ItemValidation validation
+
+	// primitive type fields
+	Type string
 }
 
 type propsData struct {
 	Name        string
-	Type        string
 	JSONName    string
 	Description string
+	Validation  validation
+
+	// actually a validation field, but this is easier for the template
+	IsRequired bool
+
+	// slice fields
+	IsSlice        bool
+	ItemType       string
+	ItemValidation validation
+
+	// primitive type and reference fields
+	Type string
 }
 
 var modelTemplate *template.Template
@@ -39,50 +60,71 @@ var modelTemplate *template.Template
 func init() {
 	var err error
 	if modelTemplate, err = readTemplateFromFile("model", "model.tpl"); err != nil {
-		log.Fatal(err)
+		logger.Fatal(err)
 	}
 }
 
 // Model generates the model based on a definitions spec
-func Model(w io.Writer, definitions spec.Definitions) (err error) {
+func Model(modelWriter io.Writer, validateWriter io.Writer, definitions spec.Definitions) (err error) {
 	var model modelData
 	if model, err = createModel(definitions); err != nil {
 		return
 	}
 
-	err = modelTemplate.Execute(w, model)
+	if err = modelTemplate.Execute(modelWriter, model); err != nil {
+		return
+	}
+
+	err = validateTemplate.Execute(validateWriter, model)
+
 	return
 }
 
 func createModel(definitions spec.Definitions) (model modelData, err error) {
+	originalLogger := logger
+
 	for name, definition := range definitions {
-		logger = log.WithFields(log.Fields{
+		logger = originalLogger.WithFields(log.Fields{
 			"definition": name,
 		})
 
-		if len(definition.Type) != 1 || (definition.Type[0] != "object" && definition.Type[0] != "array") {
-			err = errors.New("Unexpected definition type")
-			logger.WithField("type", definition.Type).Error(err)
+		logger.Info("Generating model")
+
+		var (
+			goType       string
+			val, itemVal validation
+			isSlice      bool
+		)
+
+		if goType, val, itemVal, isSlice, err = getType(definition); err != nil {
 			return
 		}
 
-		logger = logger.WithField("type", definition.Type[0])
+		logger = logger.WithField("type", goType)
 
 		t := typeData{
 			Name:        goFormat(name),
 			Description: definition.Description,
+			Validation:  val,
 		}
 
-		if definition.Type[0] == "object" {
-			t.Type = "struct"
-			if t.Props, err = createObjectProps(definition); err != nil {
+		if goType == "struct" {
+			t.IsStruct = true
+
+			required := []string{}
+			if val.Object != nil {
+				required = val.Object.Required
+			}
+
+			if t.Props, err = createObjectProps(definition, required); err != nil {
 				return
 			}
-		} else { // "array"
-			t.Type = "slice"
-			if t.RefType, err = getRefName(definition.Items.Schema.Ref); err != nil {
-				return
-			}
+		} else if isSlice {
+			t.IsSlice = true
+			t.ItemType = goType
+			t.ItemValidation = itemVal
+		} else {
+			t.Type = goType
 		}
 
 		model.Types = append(model.Types, t)
@@ -91,6 +133,11 @@ func createModel(definitions spec.Definitions) (model modelData, err error) {
 	sortModel(model)
 
 	for _, t := range model.Types {
+		if t.Type == "time.Time" {
+			model.NeedsTime = true
+			return
+		}
+
 		for _, p := range t.Props {
 			if strings.Contains(p.Type, "time.Time") {
 				model.NeedsTime = true
@@ -102,32 +149,64 @@ func createModel(definitions spec.Definitions) (model modelData, err error) {
 	return
 }
 
-func createObjectProps(definition spec.Schema) (props []propsData, err error) {
+func createObjectProps(definition spec.Schema, requiredProps []string) (props []propsData, err error) {
 	defer restoreLogger(logger)
 
+	requiredMap := map[string]bool{}
+	for _, requiredProp := range requiredProps {
+		requiredMap[requiredProp] = true
+	}
+
+	originalLogger := logger
+
 	for propName, property := range definition.Properties {
-		logger = logger.WithFields(log.Fields{
+		logger = originalLogger.WithFields(log.Fields{
 			"property":     propName,
 			"propertyType": property.Type,
 		})
 
-		if len(property.Type) > 1 {
-			err = errors.New("Unexpected property type")
+		logger.Info("Generating property")
+
+		var (
+			goType       string
+			isSlice      bool
+			val, itemVal validation
+		)
+
+		if goType, val, itemVal, isSlice, err = getType(property); err != nil {
+			return
+		}
+
+		isRequired := requiredMap[propName]
+		if !isRequired && val.hasValidation() {
+			// no validation can pass if the property value is not present
+			// enforce this here to make the template a bit simpler
+			err = errors.New("Properties with validation must be required")
 			logger.Error(err)
 			return
 		}
 
-		var propType string
-		if propType, err = getType(property); err != nil {
-			return
-		}
-
-		props = append(props, propsData{
+		p := propsData{
 			Name:        goFormat(propName),
 			JSONName:    propName,
-			Type:        propType,
 			Description: property.Description,
-		})
+			Validation:  val,
+			IsRequired:  isRequired,
+		}
+
+		if goType == "struct" {
+			err = errors.New("Nested objects are not supported; use references instead")
+			logger.Error(err)
+			return
+		} else if isSlice {
+			p.IsSlice = true
+			p.ItemType = goType
+			p.ItemValidation = itemVal
+		} else {
+			p.Type = goType
+		}
+
+		props = append(props, p)
 	}
 
 	return
@@ -135,23 +214,37 @@ func createObjectProps(definition spec.Schema) (props []propsData, err error) {
 
 var primitiveTypes = map[string]string{
 	"boolean": "bool",
-	"integer": "int",
-	"number":  "double",
+	"integer": "int64",
+	"number":  "float64",
 	"string":  "string",
 }
 
-func getType(schema spec.Schema) (t string, err error) {
-	propertyType := "ref"
-	if len(schema.Type) == 1 {
-		propertyType = schema.Type[0]
+func getType(schema spec.Schema) (t string, val, itemVal validation, isSlice bool, err error) {
+	defer restoreLogger(logger)
+
+	if len(schema.Type) > 1 {
+		err = errors.New("Union types are not supported")
+		logger.WithField("schemaType", strings.Join(schema.Type, ", ")).Error(err)
+		return
 	}
 
+	if len(schema.Type) == 0 {
+		logger = logger.WithField("schema", schema.ID)
+
+		// a schema without type must have a reference
+		t, err = getRefName(schema.Ref)
+		return
+	}
+
+	schemaType := schema.Type[0]
+	logger = logger.WithField("schemaType", schemaType)
+
 	var ok bool
-	if t, ok = primitiveTypes[propertyType]; ok {
+	if t, ok = primitiveTypes[schemaType]; ok {
 		if t == "string" && schema.Format != "" {
 			if schema.Format != "date-time" && schema.Format != "password" {
 				err = errors.New("Unsupported string format")
-				logger.Error(err)
+				logger.WithField("format", schema.Format).Error(err)
 				return
 			}
 
@@ -159,11 +252,11 @@ func getType(schema spec.Schema) (t string, err error) {
 				t = "time.Time"
 			}
 		}
+	} else if schemaType == "object" {
+		t = "struct"
+	} else if schemaType == "array" {
+		isSlice = true
 
-		return
-	}
-
-	if propertyType == "array" {
 		if schema.Items == nil {
 			err = errors.New("Array does not have items")
 			return
@@ -174,25 +267,23 @@ func getType(schema spec.Schema) (t string, err error) {
 			return
 		}
 
-		var subType string
-		if subType, err = getType(*schema.Items.Schema); err != nil {
+		var itemIsSlice bool
+		if t, itemVal, _, itemIsSlice, err = getType(*schema.Items.Schema); err != nil {
 			return
 		}
-
-		t = "[]" + subType
+		if itemIsSlice {
+			err = errors.New("Nested arrays are not supported; use references instead")
+			logger.Error(err)
+			return
+		}
+	} else {
+		err = errors.New("Unknown schema type")
+		logger.Error(err)
 		return
 	}
 
-	if propertyType == "ref" {
-		defer restoreLogger(logger)
-		logger = logger.WithField("schema", schema.ID)
+	val, err = getValidationForType(t, isSlice, schema)
 
-		t, err = getRefName(schema.Ref)
-		return
-	}
-
-	err = errors.New("Unsupported type")
-	logger.Error(err)
 	return
 }
 

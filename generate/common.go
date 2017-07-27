@@ -14,7 +14,7 @@ import (
 )
 
 // Global logger for the generate package
-var logger log.FieldLogger
+var logger log.FieldLogger = log.New()
 
 // When extending the logger with local fields, always use
 // defer restoreLogger(logger)
