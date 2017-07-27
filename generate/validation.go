@@ -126,7 +126,7 @@ func getValidationForType(t string, isSlice bool, schema spec.Schema) (val valid
 			intVal.Minimum = int64(*schema.Minimum)
 			val.Int = intVal
 		}
-		err = checkUnsupportedFields(t, schema, []string{"enum", "maximum", "exclusiveMaximum", "minimum", "exclusiveMinimum"})
+		err = checkUnsupportedFields(t, schema, []string{"enum", "maximum", "exclusiveMaximum", "minimum", "exclusiveMinimum", "readOnly"})
 	case "float64":
 		numberVal := &numberValidation{}
 
@@ -155,7 +155,7 @@ func getValidationForType(t string, isSlice bool, schema spec.Schema) (val valid
 			numberVal.Minimum = *schema.Minimum
 			val.Number = numberVal
 		}
-		err = checkUnsupportedFields(t, schema, []string{"enum", "maximum", "exclusiveMaximum", "minimum", "exclusiveMinimum"})
+		err = checkUnsupportedFields(t, schema, []string{"enum", "maximum", "exclusiveMaximum", "minimum", "exclusiveMinimum", "readOnly"})
 	case "string":
 		stringVal := &stringValidation{}
 
@@ -182,18 +182,18 @@ func getValidationForType(t string, isSlice bool, schema spec.Schema) (val valid
 			stringVal.MaxLength = *schema.MaxLength
 			val.String = stringVal
 		}
-		err = checkUnsupportedFields(t, schema, []string{"enum", "format", "minLength", "maxLength"})
+		err = checkUnsupportedFields(t, schema, []string{"enum", "format", "minLength", "maxLength", "readOnly"})
 	case "bool":
-		err = checkUnsupportedFields(t, schema, []string{})
+		err = checkUnsupportedFields(t, schema, []string{"readOnly"})
 	case "time.Time":
-		err = checkUnsupportedFields(t, schema, []string{})
+		err = checkUnsupportedFields(t, schema, []string{"readOnly"})
 	case "struct":
 		if schema.Required != nil {
 			val.Object = &objectValidation{
 				Required: schema.Required,
 			}
 		}
-		err = checkUnsupportedFields(t, schema, []string{"properties", "required"})
+		err = checkUnsupportedFields(t, schema, []string{"properties", "readOnly", "required"})
 	default:
 		err = errors.New("Unknown type")
 		logger.Error(err)
@@ -252,7 +252,7 @@ func checkUnsupportedFields(schemaType string, schema spec.Schema, allowedFields
 	// booleans
 	addUnsupportedField(schema.ExclusiveMaximum, "exclusiveMaximum")
 	addUnsupportedField(schema.ExclusiveMinimum, "exclusiveMinimum")
-	addUnsupportedField(schema.ReadOnly, "readonly")
+	addUnsupportedField(schema.ReadOnly, "readOnly")
 	addUnsupportedField(schema.UniqueItems, "uniqueItems")
 
 	if len(unsupportedFields) > 0 {

@@ -23,19 +23,18 @@ type routerData struct {
 }
 
 type routeData struct {
-	Method      string
-	Route       string
-	Name        string
-	HandlerName string
-	Body        *bodyData
-	PathParams  []paramData
-	QueryParams []paramData
-	ResultType  string
-	Tag         string
+	Method         string
+	Route          string
+	Name           string
+	HandlerName    string
+	Body           *bodyData
+	PathParams     []paramData
+	QueryParams    []paramData
+	ResultType     string
+	ReadOnlyResult bool
+	Tag            string
 
 	// meta-properties for the template
-	First    bool
-	Last     bool
 	NewBlock bool
 }
 
@@ -62,9 +61,9 @@ func init() {
 }
 
 // Router generates the model based on a definitions spec
-func Router(w io.Writer, paths *spec.Paths, modelPackage string) (err error) {
+func Router(w io.Writer, paths *spec.Paths, readOnlyTypes map[string]bool, modelPackage string) (err error) {
 	var router routerData
-	if router, err = createRouter(paths); err != nil {
+	if router, err = createRouter(paths, readOnlyTypes); err != nil {
 		return
 	}
 
@@ -74,14 +73,14 @@ func Router(w io.Writer, paths *spec.Paths, modelPackage string) (err error) {
 	return
 }
 
-func createRouter(paths *spec.Paths) (router routerData, err error) {
+func createRouter(paths *spec.Paths, readOnlyTypes map[string]bool) (router routerData, err error) {
 	var r routeData
 
 	for path, pathItem := range paths.Paths {
 		logger = logger.WithField("path", path)
 
 		if pathItem.Get != nil {
-			if r, err = createRouteData(http.MethodGet, path, pathItem.Get, pathItem.Parameters); err != nil {
+			if r, err = createRouteData(http.MethodGet, path, pathItem.Get, pathItem.Parameters, readOnlyTypes); err != nil {
 				return
 			}
 
@@ -89,7 +88,7 @@ func createRouter(paths *spec.Paths) (router routerData, err error) {
 		}
 
 		if pathItem.Post != nil {
-			if r, err = createRouteData(http.MethodPost, path, pathItem.Post, pathItem.Parameters); err != nil {
+			if r, err = createRouteData(http.MethodPost, path, pathItem.Post, pathItem.Parameters, readOnlyTypes); err != nil {
 				return
 			}
 
@@ -97,7 +96,7 @@ func createRouter(paths *spec.Paths) (router routerData, err error) {
 		}
 
 		if pathItem.Put != nil {
-			if r, err = createRouteData(http.MethodPut, path, pathItem.Put, pathItem.Parameters); err != nil {
+			if r, err = createRouteData(http.MethodPut, path, pathItem.Put, pathItem.Parameters, readOnlyTypes); err != nil {
 				return
 			}
 
@@ -105,7 +104,7 @@ func createRouter(paths *spec.Paths) (router routerData, err error) {
 		}
 
 		if pathItem.Delete != nil {
-			if r, err = createRouteData(http.MethodDelete, path, pathItem.Delete, pathItem.Parameters); err != nil {
+			if r, err = createRouteData(http.MethodDelete, path, pathItem.Delete, pathItem.Parameters, readOnlyTypes); err != nil {
 				return
 			}
 
@@ -120,10 +119,6 @@ func createRouter(paths *spec.Paths) (router routerData, err error) {
 	}
 
 	sortRouter(router)
-
-	// set meta properties for nicer templating
-	router.Routes[0].First = true
-	router.Routes[len(router.Routes)-1].Last = true
 
 	prevTag := ""
 	for i := range router.Routes {
@@ -148,7 +143,7 @@ func createRouter(paths *spec.Paths) (router routerData, err error) {
 	return
 }
 
-func createRouteData(method, path string, operation *spec.Operation, routeParameters []spec.Parameter) (r routeData, err error) {
+func createRouteData(method, path string, operation *spec.Operation, routeParameters []spec.Parameter, readOnlyTypes map[string]bool) (r routeData, err error) {
 	defer restoreLogger(logger)
 	logger = logger.WithField("method", method)
 
@@ -193,20 +188,22 @@ func createRouteData(method, path string, operation *spec.Operation, routeParame
 	}
 
 	var resultType string
-	if resultType, err = createResultType(operation.Responses); err != nil {
+	var readOnlyResult bool
+	if resultType, readOnlyResult, err = createResultType(operation.Responses, readOnlyTypes); err != nil {
 		return
 	}
 
 	r = routeData{
-		Method:      method,
-		Route:       formatParams(path),
-		Name:        name,
-		HandlerName: handlerName,
-		Body:        body,
-		PathParams:  pathParams,
-		QueryParams: queryParams,
-		ResultType:  resultType,
-		Tag:         tag,
+		Method:         method,
+		Route:          formatParams(path),
+		Name:           name,
+		HandlerName:    handlerName,
+		Body:           body,
+		PathParams:     pathParams,
+		QueryParams:    queryParams,
+		ResultType:     resultType,
+		ReadOnlyResult: readOnlyResult,
+		Tag:            tag,
 	}
 
 	return
@@ -295,7 +292,7 @@ func createparamData(location string, params map[string]*spec.Parameter) (data [
 	return
 }
 
-func createResultType(responses *spec.Responses) (resultType string, err error) {
+func createResultType(responses *spec.Responses, readOnlyTypes map[string]bool) (resultType string, readOnlyResult bool, err error) {
 	defer restoreLogger(logger)
 
 	hasSuccessResponse := false
@@ -314,6 +311,10 @@ func createResultType(responses *spec.Responses) (resultType string, err error) 
 			if response.Schema != nil {
 				if resultType, err = getRefName(response.Schema.Ref); err != nil {
 					return
+				}
+
+				if readOnlyTypes[resultType] {
+					readOnlyResult = true
 				}
 			}
 		} else {

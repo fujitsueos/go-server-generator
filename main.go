@@ -76,12 +76,14 @@ func generateServer(path string, swagger *spec.Swagger) (err error) {
 	defer closeRouterFile()
 
 	// create the model and write to the model and validate files
-	if err = generate.Model(modelFile, validateFile, swagger.Definitions); err != nil {
+	var readOnlyTypes map[string]bool
+	readOnlyTypes, err = generate.Model(modelFile, validateFile, swagger.Definitions)
+	if err != nil {
 		return
 	}
 
 	// create the router and write to the router file
-	if err = generate.Router(routerFile, swagger.Paths, modelPackage); err != nil {
+	if err = generate.Router(routerFile, swagger.Paths, readOnlyTypes, modelPackage); err != nil {
 		return
 	}
 

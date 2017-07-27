@@ -1,3 +1,53 @@
+{{/* Input: { Type, ReadOnly } */}}
+{{ define "validateType" -}}
+	// Validate validates a {{ .ReadOnly }}{{ .Type.Name }} based on the swagger spec
+	func (s *{{ .ReadOnly }}{{ .Type.Name }}) Validate() (err *ValidationError) {
+		var errors []string
+
+		{{ if .Type.IsStruct -}}
+			{{ if .ReadOnly -}}
+				if e := s.{{ .Type.Name }}.Validate(); e != nil {
+					errors = append(errors, e.errors...)
+				}
+			{{ end -}}
+
+			{{ range .Type.Props -}}
+				{{ if eq (eq $.ReadOnly "ReadOnly") .IsReadOnly -}}
+					{{ if .IsRequired }}
+						if s.{{ .Name }} == nil {
+							errors = append(errors, "{{ .JSONName }} is required")
+						}
+					{{ end -}}
+
+					{{ if .IsSlice -}}
+						{{ template "validateSlice" dict "Validation" .Validation.Array "Slice" (print "s." .Name) "Name" .JSONName "ItemType" .ItemType "ItemValidation" .ItemValidation -}}
+					{{ else if eq .Type "int64" -}}
+						{{ template "validateInt64" dict "Validation" .Validation.Int "Int" (print "*s." .Name) "Name" .JSONName -}}
+					{{ else if eq .Type "float64" -}}
+						{{ template "validateFloat64" dict "Validation" .Validation.Number "Number" (print "*s." .Name) "Name" .JSONName -}}
+					{{ else if eq .Type "string" -}}
+						{{ template "validateString" dict "Validation" .Validation.String "String" (print "*s." .Name) "Name" .JSONName -}}
+					{{ else if not (eq .Type "bool" "time.Time") }}
+						if e := s.{{ .Name }}.Validate(); e != nil {
+							errors = append(errors, e.errors...)
+						}
+					{{ end -}}
+				{{ end -}}
+			{{ end -}}
+		{{ else }}{{/* .Type.IsSlice */ -}}
+			{{ template "validateSlice" dict "Validation" .Type.Validation.Array "Slice" "*s" "Name" .Type.Name "ItemType" .Type.ItemType "ItemValidation" .Type.ItemValidation -}}
+		{{ end -}}
+
+		if len(errors) > 0 {
+			err = &ValidationError{
+				errors,
+			}
+		}
+
+		return
+	}
+{{ end -}}
+
 {{/* Input: { Slice, Name, Validation, ItemType, ItemValidation } */ -}}
 {{ define "validateSlice" -}}
 	{{ if .Validation -}}
@@ -157,49 +207,31 @@ func (e *ValidationError) Error() string {
 }
 
 {{ range .Types -}}
+	{{ if or .IsStruct .IsSlice -}}
+		{{ template "validateType" dict "Type" . "ReadOnly" "" }}
+    {{ if .HasReadOnlyProps -}}
+      {{ template "validateType" dict "Type" . "ReadOnly" "ReadOnly" }}
+    {{ end -}}
+	{{ else -}}
+		// Validate validates a {{ .Name }} based on the swagger spec
+		func (s *{{ .Name }}) Validate() (err *ValidationError) {
+			var errors []string
 
-	// Validate validates a {{ .Name }} based on the swagger spec
-	func (s *{{ .Name }}) Validate() (err *ValidationError) {
-		errors := make([]string, 0)
+			{{ if eq .Type "int64" -}}
+				{{ template "validateInt64" dict "Validation" .Validation.Int "Int" "int64(*s)" "Name" .Name -}}
+			{{ else if eq .Type "float64" -}}
+				{{ template "validateFloat64" dict "Validation" .Validation.Number "Number" "float64(*s)" "Name" .Name -}}
+			{{ else if eq .Type "string" -}}
+				{{ template "validateString" dict "Validation" .Validation.String "String" "string(*s)" "Name" .Name -}}
+			{{ end }}
 
-		{{ if .IsStruct -}}
-			{{ range .Props -}}
-				{{ if .IsRequired }}
-					if s.{{ .Name }} == nil {
-						errors = append(errors, "{{ .JSONName }} is required")
-					}
-				{{ end -}}
-
-				{{ if .IsSlice -}}
-					{{ template "validateSlice" dict "Validation" .Validation.Array "Slice" (print "s." .Name) "Name" .JSONName "ItemType" .ItemType "ItemValidation" .ItemValidation -}}
-				{{ else if eq .Type "int64" -}}
-					{{ template "validateInt64" dict "Validation" .Validation.Int "Int" (print "*s." .Name) "Name" .JSONName -}}
-				{{ else if eq .Type "float64" -}}
-					{{ template "validateFloat64" dict "Validation" .Validation.Number "Number" (print "*s." .Name) "Name" .JSONName -}}
-				{{ else if eq .Type "string" -}}
-					{{ template "validateString" dict "Validation" .Validation.String "String" (print "*s." .Name) "Name" .JSONName -}}
-				{{ else if not (eq .Type "bool" "time.Time") }}
-					if e := s.{{ .Name }}.Validate(); e != nil {
-						errors = append(errors, e.errors...)
-					}
-				{{ end -}}
-			{{ end -}}
-		{{ else if .IsSlice -}}
-			{{ template "validateSlice" dict "Validation" .Validation.Array "Slice" "*s" "Name" .Name "ItemType" .ItemType "ItemValidation" .ItemValidation -}}
-		{{ else if eq .Type "int64" -}}
-			{{ template "validateInt64" dict "Validation" .Validation.Int "Int" "int64(*s)" "Name" .Name -}}
-		{{ else if eq .Type "float64" -}}
-			{{ template "validateFloat64" dict "Validation" .Validation.Number "Number" "float64(*s)" "Name" .Name -}}
-		{{ else if eq .Type "string" -}}
-			{{ template "validateString" dict "Validation" .Validation.String "String" "string(*s)" "Name" .Name -}}
-		{{ end }}
-
-		if len(errors) > 0 {
-			err = &ValidationError{
-				errors,
+			if len(errors) > 0 {
+				err = &ValidationError{
+					errors,
+				}
 			}
-		}
 
-		return
-	}
+			return
+		}
+	{{ end -}}
 {{ end }}

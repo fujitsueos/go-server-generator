@@ -35,10 +35,10 @@ type Handler interface {
 			{{- if .Body -}}
 				{{ .Body.Name }} model.{{ .Body.Type }}
 			{{- end -}}
-		) ({{ if .ResultType }}model.{{ .ResultType }}, {{ end }}error)
-		{{- if not .Last }}
-		{{ end }}
-	{{- end }}
+		) ({{ if .ResultType -}}
+			model.{{ if .ReadOnlyResult }}ReadOnly{{ end }}{{ .ResultType }},
+		{{- end }}error)
+	{{ end }}
 }
 
 // ErrorTransformer transforms an error into a message and code that can be returned via http
@@ -118,7 +118,18 @@ func NewServer(handler Handler, errorTransformer ErrorTransformer) http.Handler 
 		}
 
 		{{ if .ResultType -}}
-			respondJSON(w, result, "{{ .ResultType }}")
+			if err := result.Validate(); err != nil {
+				log.WithFields(log.Fields{
+					"dataType": "{{ if .ReadOnlyResult }}ReadOnly{{ end }}{{ .ResultType }}",
+					"error": err.Error(),
+				}).Error("Invalid response data")
+				http.Error(w, "Internal server error", http.StatusInternalServerError)
+				return
+			}
+		{{ end -}}
+
+		{{ if .ResultType -}}
+			respondJSON(w, result, "{{ if .ReadOnlyResult }}ReadOnly{{ end }}{{ .ResultType }}")
 		{{- else -}}
 			w.Write([]byte("OK"))
 		{{- end }}
