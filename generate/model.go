@@ -230,6 +230,14 @@ var primitiveTypes = map[string]string{
 	"string":  "string",
 }
 
+var goPrimitives = map[string]struct{}{
+	"bool":      struct{}{},
+	"int64":     struct{}{},
+	"float64":   struct{}{},
+	"string":    struct{}{},
+	"time.Time": struct{}{},
+}
+
 func getType(schema spec.Schema) (t string, val, itemVal validation, isSlice bool, err error) {
 	defer restoreLogger(logger)
 
@@ -294,6 +302,12 @@ func getType(schema spec.Schema) (t string, val, itemVal validation, isSlice boo
 	}
 
 	val, err = getValidationForType(t, isSlice, schema)
+
+	// this shouldn't be here but in the validation part we don't have enough context
+	if _, ok := goPrimitives[t]; val.Array != nil && val.Array.UniqueItems && !ok {
+		err = errors.New("Only primitive arrays can be enforced to be unique")
+		logger.Error(err)
+	}
 
 	return
 }

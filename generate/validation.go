@@ -29,6 +29,7 @@ type arrayValidation struct {
 	MaxItems    int64
 	HasMinItems bool
 	MinItems    int64
+	UniqueItems bool
 }
 
 type intValidation struct {
@@ -85,7 +86,11 @@ func getValidationForType(t string, isSlice bool, schema spec.Schema) (val valid
 			arrayVal.MaxItems = *schema.MaxItems
 			val.Array = arrayVal
 		}
-		err = checkUnsupportedFields(t, schema, []string{"items", "minItems", "maxItems"})
+		if schema.UniqueItems {
+			arrayVal.UniqueItems = true
+			val.Array = arrayVal
+		}
+		err = checkUnsupportedFields(t, schema, []string{"items", "minItems", "maxItems", "uniqueItems"})
 
 		return
 	}

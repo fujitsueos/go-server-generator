@@ -35,7 +35,7 @@
 				{{ end -}}
 			{{ end -}}
 		{{ else }}{{/* .Type.IsSlice */ -}}
-			{{ template "validateSlice" dict "Validation" .Type.Validation.Array "Slice" "*s" "Name" .Type.Name "ItemType" .Type.ItemType "ItemValidation" .Type.ItemValidation -}}
+			{{ template "validateSlice" dict "Validation" .Type.Validation.Array "Slice" "*s" "Name" .Type.Name "ItemType" (print .ReadOnly .Type.ItemType) "ItemValidation" .Type.ItemValidation -}}
 		{{ end -}}
 
 		if len(errors) > 0 {
@@ -57,9 +57,19 @@
 			}
 		{{ end -}}
 
-		{{- if .Validation.HasMinItems }}
+		{{ if .Validation.HasMinItems }}
 			if len({{ .Slice }}) < {{ .Validation.MinItems }} {
 				errors = append(errors, "{{ .Name }} should have no less than {{ .Validation.MinItems }} elements")
+			}
+		{{ end -}}
+
+		{{ if .Validation.UniqueItems -}}
+			unique := make(map[{{ .ItemType }}]struct{})
+			for _, elt := range {{ .Slice }} {
+				unique[elt] = struct{}{}
+			}
+			if len(unique) < len({{ .Slice }}) {
+				errors = append(errors, "{{ .Name }} contains duplicate elements")
 			}
 		{{ end -}}
 	{{ end -}}
