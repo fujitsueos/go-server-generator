@@ -97,7 +97,15 @@ func (m *middleware) {{ .Name }}(w http.ResponseWriter, r *http.Request, {{ if .
 			"bodyType": "{{ .Body.Type }}",
 			"error": err.Error(),
 		}).Error("Failed to parse body data")
-		http.Error(w, "Internal server error", http.StatusInternalServerError)
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	if err := {{ .Body.Name }}.Validate(); err != nil {
+		log.WithFields(log.Fields{
+			"bodyType": "{{ .Body.Type }}",
+			"error": err.Error(),
+		}).Error("Failed to parse body data")
+		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 

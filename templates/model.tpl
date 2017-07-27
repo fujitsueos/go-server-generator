@@ -9,17 +9,18 @@ import "time"
 {{ end -}}
 
 {{ range .Types -}}
-{{ if eq .Type "struct" -}}
 // {{ .Name }}{{ if .Description }} {{ .Description }}{{ else }} No description provided{{ end }}
+{{ if .IsStruct -}}
 type {{ .Name }} struct {
 {{ range .Props -}}
 {{ if .Description }}	// {{ .Description }}
 {{ end -}}
-{{ "	" }}{{ .Name }} *{{ .Type }} `json:"{{ .JSONName }}"`
+{{ "	" }}{{ .Name }} {{ if .IsSlice }}[]{{ .ItemType }}{{ else }}*{{ .Type }}{{ end }} `json:"{{ .JSONName }}"`
 {{ end -}}
 }
+{{ else if .IsSlice -}}
+type {{ .Name }} []{{ .ItemType }}
 {{ else -}}
-// {{ .Name }}{{ if .Description }} {{ .Description }}{{ else }} No description provided{{ end }}
-type {{ .Name }} []{{ .RefType }}
+type {{ .Name }} {{ .Type }}
 {{ end }}
 {{ end }}
