@@ -28,8 +28,9 @@ type routeData struct {
 	Name           string
 	HandlerName    string
 	Body           *bodyData
-	PathParams     []paramData
-	QueryParams    []paramData
+	Params         []paramData
+	HasPathParams  bool
+	HasQueryParams bool
 	ResultType     string
 	ReadOnlyResult bool
 	Tag            string
@@ -44,6 +45,7 @@ type bodyData struct {
 }
 
 type paramData struct {
+	Location string
 	Name     string
 	RawName  string
 	Type     string
@@ -130,7 +132,7 @@ func createRouter(paths *spec.Paths, readOnlyTypes map[string]bool) (router rout
 
 		prevTag = route.Tag
 
-		for _, p := range append(route.PathParams, route.QueryParams...) {
+		for _, p := range route.Params {
 			if strings.Contains(p.Type, "time.Time") {
 				router.NeedsTime = true
 			}
@@ -168,8 +170,8 @@ func createRouteData(method, path string, operation *spec.Operation, routeParame
 
 	paramMap := mergeParams(routeParameters, operation.Parameters)
 
-	if len(paramMap["header"]) > 0 || len(paramMap["formData"]) > 0 {
-		err = errors.New("header and formData parameters are not supported")
+	if len(paramMap["formData"]) > 0 {
+		err = errors.New("formData parameters are not supported")
 		logger.Error(err)
 		return
 	}
@@ -179,11 +181,14 @@ func createRouteData(method, path string, operation *spec.Operation, routeParame
 		return
 	}
 
-	var pathParams, queryParams []paramData
+	var pathParams, queryParams, headerParams []paramData
 	if pathParams, err = createparamData("path", paramMap["path"]); err != nil {
 		return
 	}
 	if queryParams, err = createparamData("query", paramMap["query"]); err != nil {
+		return
+	}
+	if headerParams, err = createparamData("header", paramMap["header"]); err != nil {
 		return
 	}
 
@@ -199,8 +204,9 @@ func createRouteData(method, path string, operation *spec.Operation, routeParame
 		Name:           name,
 		HandlerName:    handlerName,
 		Body:           body,
-		PathParams:     pathParams,
-		QueryParams:    queryParams,
+		Params:         append(append(append([]paramData{}, pathParams...), headerParams...), queryParams...),
+		HasPathParams:  len(pathParams) > 0,
+		HasQueryParams: len(queryParams) > 0,
 		ResultType:     resultType,
 		ReadOnlyResult: readOnlyResult,
 		Tag:            tag,
@@ -281,6 +287,7 @@ func createparamData(location string, params map[string]*spec.Parameter) (data [
 		}
 
 		data = append(data, paramData{
+			Location: location,
 			Name:     location + goFormat(param.Name),
 			RawName:  param.Name,
 			Type:     t,
@@ -379,13 +386,19 @@ func lowerStart(s string) string {
 }
 
 type routeByRoute []routeData
-type paramByName []paramData
+type paramByLocationAndName []paramData
 
 var methodOrder = map[string]int{
 	"GET":    0,
 	"POST":   1,
 	"PUT":    2,
 	"DELETE": 3,
+}
+
+var locationOrder = map[string]int{
+	"path":   0,
+	"header": 1,
+	"query":  2,
 }
 
 func (a routeByRoute) Len() int      { return len(a) }
@@ -402,15 +415,20 @@ func (a routeByRoute) Less(i, j int) bool {
 	return methodOrder[a[i].Method] < methodOrder[a[j].Method]
 }
 
-func (a paramByName) Len() int           { return len(a) }
-func (a paramByName) Swap(i, j int)      { a[i], a[j] = a[j], a[i] }
-func (a paramByName) Less(i, j int) bool { return a[i].Name < a[j].Name }
+func (a paramByLocationAndName) Len() int      { return len(a) }
+func (a paramByLocationAndName) Swap(i, j int) { a[i], a[j] = a[j], a[i] }
+func (a paramByLocationAndName) Less(i, j int) bool {
+	if locationOrder[a[i].Location] != locationOrder[a[j].Location] {
+		return locationOrder[a[i].Location] < locationOrder[a[j].Location]
+	}
+
+	return a[i].Name < a[j].Name
+}
 
 func sortRouter(router routerData) {
 	sort.Sort(routeByRoute(router.Routes))
 
 	for _, r := range router.Routes {
-		sort.Sort(paramByName(r.PathParams))
-		sort.Sort(paramByName(r.QueryParams))
+		sort.Sort(paramByLocationAndName(r.Params))
 	}
 }
