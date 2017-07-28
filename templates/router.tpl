@@ -1,3 +1,13 @@
+{{ define "getParam" -}}
+	{{- if eq . "path" -}}
+		params.ByName
+	{{- else if eq . "header" -}}
+		r.Header.Get
+	{{- else -}}
+		query.Get
+	{{- end -}}
+{{ end -}}
+
 package router
 
 // This is a generated file
@@ -26,10 +36,7 @@ type Handler interface {
 			// {{ .Tag }}
 		{{ end -}}
 		{{ .HandlerName }}(
-			{{- range .PathParams -}}
-				{{ .Name }} {{ if .IsArray }}[]{{ end }}{{ .Type }},
-			{{- end -}}
-			{{- range .QueryParams -}}
+			{{- range .Params -}}
 				{{ .Name }} {{ if .IsArray }}[]{{ end }}{{ .Type }},
 			{{- end -}}
 			{{- if .Body -}}
@@ -68,25 +75,21 @@ func NewServer(handler Handler, errorTransformer ErrorTransformer) http.Handler 
 }
 
 {{ range .Routes -}}
-	func (m *middleware) {{ .Name }}(w http.ResponseWriter, r *http.Request, {{ if .PathParams }}params{{ else }}_{{ end }} httprouter.Params) {
-		{{- range .PathParams -}}
+	func (m *middleware) {{ .Name }}(w http.ResponseWriter, r *http.Request, {{ if .HasPathParams }}params{{ else }}_{{ end }} httprouter.Params) {
+		{{ if .HasQueryParams -}}
+			query := r.URL.Query()
+		{{ end -}}
+		{{- range .Params -}}
 			{{ if eq .Type "time.Time" -}}
-				{{ .Name }}, parseErr := time.Parse(time.RFC3339, params.ByName("{{ .RawName }}"))
+				{{ .Name }}, parseErr := time.Parse(time.RFC3339, {{ template "getParam" .Location }}("{{ .RawName }}"))
 				if parseErr != nil {
 					http.Error(w, "Cannot parse date", http.StatusBadRequest)
 					return
 				}
 			{{ else if .IsArray -}}
-				{{ .Name }} := strings.Split(params.ByName("{{ .RawName }}"), ",")
+				{{ .Name }} := strings.Split({{ template "getParam" .Location }}("{{ .RawName }}"), ",")
 			{{ else -}}
-				{{ .Name }} := params.ByName("{{ .RawName }}")
-			{{ end }}
-		{{ end }}
-
-		{{- if .QueryParams -}}
-			query := r.URL.Query()
-			{{ range .QueryParams -}}
-				{{ .Name }} := query.Get("{{ .RawName }}")
+				{{ .Name }} := {{ template "getParam" .Location }}("{{ .RawName }}")
 			{{ end }}
 		{{ end }}
 
@@ -110,7 +113,7 @@ func NewServer(handler Handler, errorTransformer ErrorTransformer) http.Handler 
 			}
 		{{ end }}
 
-		{{ if .ResultType }}result, {{ end }}err := m.handler.{{ .HandlerName }}({{ range .PathParams }}{{ .Name }}, {{ end }}{{ range .QueryParams }}{{ .Name }}, {{ end }}{{ if .Body }}{{ .Body.Name }}{{ end }})
+		{{ if .ResultType }}result, {{ end }}err := m.handler.{{ .HandlerName }}({{ range .Params }}{{ .Name }}, {{ end }}{{ if .Body }}{{ .Body.Name }}{{ end }})
 		if err != nil {
 			message, code := m.errorTransformer.Transform(err)
 			http.Error(w, message, code)
