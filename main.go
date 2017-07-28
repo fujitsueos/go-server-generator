@@ -52,9 +52,9 @@ func readValidSwagger(swaggerPath string) (swagger *spec.Swagger, err error) {
 
 func generateServer(path string, swagger *spec.Swagger) (err error) {
 	var (
-		modelFile, routerFile           *os.File
-		modelPackage                    string
-		closeModelFile, closeRouterFile func()
+		modelFile, validateFile, routerFile                *os.File
+		modelPackage                                       string
+		closeModelFile, closeValidateFile, closeRouterFile func()
 	)
 
 	// create the model file
@@ -63,19 +63,27 @@ func generateServer(path string, swagger *spec.Swagger) (err error) {
 	}
 	defer closeModelFile()
 
+	// create the validate file
+	if validateFile, _, closeValidateFile, err = createOutputFile(path, "generated/model/validate.go"); err != nil {
+		return
+	}
+	defer closeValidateFile()
+
 	// create the router file
 	if routerFile, _, closeRouterFile, err = createOutputFile(path, "generated/router/router.go"); err != nil {
 		return
 	}
 	defer closeRouterFile()
 
-	// create the model and write to the model file
-	if err = generate.Model(modelFile, swagger.Definitions); err != nil {
+	// create the model and write to the model and validate files
+	var readOnlyTypes map[string]bool
+	readOnlyTypes, err = generate.Model(modelFile, validateFile, swagger.Definitions)
+	if err != nil {
 		return
 	}
 
 	// create the router and write to the router file
-	if err = generate.Router(routerFile, swagger.Paths, modelPackage); err != nil {
+	if err = generate.Router(routerFile, swagger.Paths, readOnlyTypes, modelPackage); err != nil {
 		return
 	}
 

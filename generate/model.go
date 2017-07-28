@@ -4,9 +4,8 @@ import (
 	"errors"
 	"io"
 	"sort"
-	"text/template"
-
 	"strings"
+	"text/template"
 
 	"github.com/go-openapi/spec"
 	log "github.com/sirupsen/logrus"
@@ -20,18 +19,42 @@ type modelData struct {
 }
 
 type typeData struct {
-	Name        string
-	Description string
-	Type        string
-	Props       []propsData
-	RefType     string
+	// general fields
+	Name             string
+	Description      string
+	Validation       validation
+	HasReadOnlyProps bool
+
+	// struct fields
+	IsStruct bool
+	Props    []propsData
+
+	// slice fields
+	IsSlice        bool
+	ItemType       string
+	ItemValidation validation
+
+	// primitive type fields
+	Type string
 }
 
 type propsData struct {
 	Name        string
-	Type        string
 	JSONName    string
 	Description string
+	Validation  validation
+	IsReadOnly  bool
+
+	// actually a validation field, but this is easier for the template
+	IsRequired bool
+
+	// slice fields
+	IsSlice        bool
+	ItemType       string
+	ItemValidation validation
+
+	// primitive type and reference fields
+	Type string
 }
 
 var modelTemplate *template.Template
@@ -39,58 +62,90 @@ var modelTemplate *template.Template
 func init() {
 	var err error
 	if modelTemplate, err = readTemplateFromFile("model", "model.tpl"); err != nil {
-		log.Fatal(err)
+		logger.Fatal(err)
 	}
 }
 
 // Model generates the model based on a definitions spec
-func Model(w io.Writer, definitions spec.Definitions) (err error) {
+func Model(modelWriter io.Writer, validateWriter io.Writer, definitions spec.Definitions) (readOnlyTypes map[string]bool, err error) {
 	var model modelData
-	if model, err = createModel(definitions); err != nil {
+	if model, readOnlyTypes, err = createModel(definitions); err != nil {
 		return
 	}
 
-	err = modelTemplate.Execute(w, model)
+	if err = modelTemplate.Execute(modelWriter, model); err != nil {
+		return
+	}
+
+	err = validateTemplate.Execute(validateWriter, model)
+
 	return
 }
 
-func createModel(definitions spec.Definitions) (model modelData, err error) {
+func createModel(definitions spec.Definitions) (model modelData, readOnlyTypes map[string]bool, err error) {
+	originalLogger := logger
+
 	for name, definition := range definitions {
-		logger = log.WithFields(log.Fields{
+		logger = originalLogger.WithFields(log.Fields{
 			"definition": name,
 		})
 
-		if len(definition.Type) != 1 || (definition.Type[0] != "object" && definition.Type[0] != "array") {
-			err = errors.New("Unexpected definition type")
-			logger.WithField("type", definition.Type).Error(err)
+		logger.Info("Generating model")
+
+		var (
+			goType       string
+			val, itemVal validation
+			isSlice      bool
+		)
+
+		if goType, val, itemVal, isSlice, err = getType(definition); err != nil {
 			return
 		}
 
-		logger = logger.WithField("type", definition.Type[0])
+		logger = logger.WithField("type", goType)
 
 		t := typeData{
 			Name:        goFormat(name),
 			Description: definition.Description,
+			Validation:  val,
 		}
 
-		if definition.Type[0] == "object" {
-			t.Type = "struct"
-			if t.Props, err = createObjectProps(definition); err != nil {
+		if goType == "struct" {
+			t.IsStruct = true
+
+			required := []string{}
+			if val.Object != nil {
+				required = val.Object.Required
+			}
+
+			if t.Props, t.HasReadOnlyProps, err = createObjectProps(definition, required); err != nil {
 				return
 			}
-		} else { // "array"
-			t.Type = "slice"
-			if t.RefType, err = getRefName(definition.Items.Schema.Ref); err != nil {
-				return
-			}
+		} else if isSlice {
+			t.IsSlice = true
+			t.ItemType = goType
+			t.ItemValidation = itemVal
+		} else {
+			t.Type = goType
 		}
 
 		model.Types = append(model.Types, t)
 	}
 
+	logger = originalLogger
+
+	if readOnlyTypes, err = checkReadOnlyTypes(&model); err != nil {
+		return
+	}
+
 	sortModel(model)
 
 	for _, t := range model.Types {
+		if t.Type == "time.Time" {
+			model.NeedsTime = true
+			return
+		}
+
 		for _, p := range t.Props {
 			if strings.Contains(p.Type, "time.Time") {
 				model.NeedsTime = true
@@ -102,32 +157,67 @@ func createModel(definitions spec.Definitions) (model modelData, err error) {
 	return
 }
 
-func createObjectProps(definition spec.Schema) (props []propsData, err error) {
+func createObjectProps(definition spec.Schema, requiredProps []string) (props []propsData, hasReadOnlyProps bool, err error) {
 	defer restoreLogger(logger)
 
+	requiredMap := map[string]bool{}
+	for _, requiredProp := range requiredProps {
+		requiredMap[requiredProp] = true
+	}
+
+	originalLogger := logger
+
 	for propName, property := range definition.Properties {
-		logger = logger.WithFields(log.Fields{
+		logger = originalLogger.WithFields(log.Fields{
 			"property":     propName,
 			"propertyType": property.Type,
 		})
 
-		if len(property.Type) > 1 {
-			err = errors.New("Unexpected property type")
+		logger.Info("Generating property")
+
+		var (
+			goType       string
+			isSlice      bool
+			val, itemVal validation
+		)
+
+		if goType, val, itemVal, isSlice, err = getType(property); err != nil {
+			return
+		}
+
+		isRequired := requiredMap[propName]
+		if !isRequired && val.hasValidation() {
+			// no validation can pass if the property value is not present
+			// enforce this here to make the template a bit simpler
+			err = errors.New("Properties with validation must be required")
 			logger.Error(err)
 			return
 		}
 
-		var propType string
-		if propType, err = getType(property); err != nil {
-			return
-		}
-
-		props = append(props, propsData{
+		p := propsData{
 			Name:        goFormat(propName),
 			JSONName:    propName,
-			Type:        propType,
 			Description: property.Description,
-		})
+			Validation:  val,
+			IsReadOnly:  property.ReadOnly,
+			IsRequired:  isRequired,
+		}
+
+		hasReadOnlyProps = hasReadOnlyProps || p.IsReadOnly
+
+		if goType == "struct" {
+			err = errors.New("Nested objects are not supported; use references instead")
+			logger.Error(err)
+			return
+		} else if isSlice {
+			p.IsSlice = true
+			p.ItemType = goType
+			p.ItemValidation = itemVal
+		} else {
+			p.Type = goType
+		}
+
+		props = append(props, p)
 	}
 
 	return
@@ -135,23 +225,45 @@ func createObjectProps(definition spec.Schema) (props []propsData, err error) {
 
 var primitiveTypes = map[string]string{
 	"boolean": "bool",
-	"integer": "int",
-	"number":  "double",
+	"integer": "int64",
+	"number":  "float64",
 	"string":  "string",
 }
 
-func getType(schema spec.Schema) (t string, err error) {
-	propertyType := "ref"
-	if len(schema.Type) == 1 {
-		propertyType = schema.Type[0]
+var goPrimitives = map[string]struct{}{
+	"bool":      struct{}{},
+	"int64":     struct{}{},
+	"float64":   struct{}{},
+	"string":    struct{}{},
+	"time.Time": struct{}{},
+}
+
+func getType(schema spec.Schema) (t string, val, itemVal validation, isSlice bool, err error) {
+	defer restoreLogger(logger)
+
+	if len(schema.Type) > 1 {
+		err = errors.New("Union types are not supported")
+		logger.WithField("schemaType", strings.Join(schema.Type, ", ")).Error(err)
+		return
 	}
 
+	if len(schema.Type) == 0 {
+		logger = logger.WithField("schema", schema.ID)
+
+		// a schema without type must have a reference
+		t, err = getRefName(schema.Ref)
+		return
+	}
+
+	schemaType := schema.Type[0]
+	logger = logger.WithField("schemaType", schemaType)
+
 	var ok bool
-	if t, ok = primitiveTypes[propertyType]; ok {
+	if t, ok = primitiveTypes[schemaType]; ok {
 		if t == "string" && schema.Format != "" {
 			if schema.Format != "date-time" && schema.Format != "password" {
 				err = errors.New("Unsupported string format")
-				logger.Error(err)
+				logger.WithField("format", schema.Format).Error(err)
 				return
 			}
 
@@ -159,11 +271,11 @@ func getType(schema spec.Schema) (t string, err error) {
 				t = "time.Time"
 			}
 		}
+	} else if schemaType == "object" {
+		t = "struct"
+	} else if schemaType == "array" {
+		isSlice = true
 
-		return
-	}
-
-	if propertyType == "array" {
 		if schema.Items == nil {
 			err = errors.New("Array does not have items")
 			return
@@ -174,25 +286,113 @@ func getType(schema spec.Schema) (t string, err error) {
 			return
 		}
 
-		var subType string
-		if subType, err = getType(*schema.Items.Schema); err != nil {
+		var itemIsSlice bool
+		if t, itemVal, _, itemIsSlice, err = getType(*schema.Items.Schema); err != nil {
 			return
 		}
-
-		t = "[]" + subType
+		if itemIsSlice {
+			err = errors.New("Nested arrays are not supported; use references instead")
+			logger.Error(err)
+			return
+		}
+	} else {
+		err = errors.New("Unknown schema type")
+		logger.Error(err)
 		return
 	}
 
-	if propertyType == "ref" {
-		defer restoreLogger(logger)
-		logger = logger.WithField("schema", schema.ID)
+	val, err = getValidationForType(t, isSlice, schema)
 
-		t, err = getRefName(schema.Ref)
-		return
+	// this shouldn't be here but in the validation part we don't have enough context
+	if _, ok := goPrimitives[t]; val.Array != nil && val.Array.UniqueItems && !ok {
+		err = errors.New("Only primitive arrays can be enforced to be unique")
+		logger.Error(err)
 	}
 
-	err = errors.New("Unsupported type")
-	logger.Error(err)
+	return
+}
+
+// Swagger objects with read-only properties lead to two Go structs, one with the read-only
+// properties and one with the rest. If we reference such an object from another object, we need
+// to also create two Go structs for that one. Not impossible, but it leads to annoying bookkeeping.
+//
+// For now we just forbid that case: an object with read-only properties cannot be refenced by
+// another object. There is one exception: top-level arrays may reference objects with read-only
+// properties. This is the typical response for the GET /<resources> endpoint, so forbidding that
+// makes no sense.
+func checkReadOnlyTypes(model *modelData) (readOnlyTypes map[string]bool, err error) {
+	defer restoreLogger(logger)
+
+	// names of types that have read-only properties
+	readOnlyTypes = make(map[string]bool)
+	for _, t := range model.Types {
+		if t.HasReadOnlyProps {
+			readOnlyTypes[t.Name] = true
+		}
+	}
+
+	readOnlyArrays := make(map[string]bool)
+
+	// check that read-only objects are only referenced by top-level arrays
+	for i := range model.Types {
+		t := &model.Types[i]
+
+		logger = logger.WithFields(log.Fields{
+			"type": t.Name,
+		})
+
+		for _, dep := range getDependencies(t) {
+			logger = logger.WithFields(log.Fields{
+				"reference": dep,
+			})
+
+			if readOnlyTypes[dep] {
+				if t.IsSlice {
+					// the only allowed case: a top level array referencing a type with read-only properties
+					t.HasReadOnlyProps = true
+					readOnlyArrays[t.Name] = true
+					readOnlyTypes[t.Name] = true
+				} else {
+					err = errors.New("Cannot $ref a type with read-only properties")
+					logger.Error(err)
+					return
+				}
+			}
+		}
+	}
+
+	// verify that the top-level arrays are not referenced again
+	for _, t := range model.Types {
+		for _, dep := range getDependencies(&t) {
+			if readOnlyArrays[dep] {
+				err = errors.New("Cannot $ref a read-only array")
+				logger.Error(err)
+				return
+			}
+		}
+	}
+
+	return
+}
+
+func getDependencies(t *typeData) (dependencies []string) {
+	switch {
+	case t.IsStruct:
+		dependencies = make([]string, len(t.Props))
+
+		for i, p := range t.Props {
+			if p.IsSlice {
+				dependencies[i] = p.ItemType
+			} else {
+				dependencies[i] = p.Type
+			}
+		}
+	case t.IsSlice:
+		dependencies = []string{t.ItemType}
+	default:
+		dependencies = []string{t.Type}
+	}
+
 	return
 }
 
