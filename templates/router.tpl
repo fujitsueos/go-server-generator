@@ -65,7 +65,20 @@ func NewServer(handler Handler, errorTransformer ErrorTransformer) http.Handler 
 		router.{{ .Method }}("{{ .Route }}", m.{{ .Name }})
 	{{ end }}
 
-	return router
+	return Recoverer(router)
+}
+
+// Recoverer handles unexpected panics and returns internal server error
+func Recoverer(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		defer func() {
+			if err := recover(); err != nil {
+				log.WithField("error", err).Error("Recovered")
+				http.Error(w, "Internal server error", http.StatusInternalServerError)
+			}
+		}()
+		next.ServeHTTP(w, r)
+	})
 }
 
 {{ range .Routes -}}
