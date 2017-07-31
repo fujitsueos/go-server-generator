@@ -39,9 +39,7 @@
 		{{ end -}}
 
 		if len(errors) > 0 {
-			err = &ValidationError{
-				errors,
-			}
+			err = NewValidationError(errors)
 		}
 
 		return
@@ -211,6 +209,12 @@ func (e *ValidationError) Error() string {
 	return strings.Join(e.errors, "\n")
 }
 
+func NewValidationError(errors []string) *ValidationError {
+	return &ValidationError{
+		errors,
+	}
+}
+
 {{ range .Types -}}
 	{{ if or .IsStruct .IsSlice -}}
 		{{ template "validateType" dict "Type" . "ReadOnly" "" }}
@@ -231,9 +235,7 @@ func (e *ValidationError) Error() string {
 			{{ end }}
 
 			if len(errors) > 0 {
-				err = &ValidationError{
-					errors,
-				}
+				err = NewValidationError(errors)
 			}
 
 			return
