@@ -13,9 +13,6 @@ import (
 
 type modelData struct {
 	Types []typeData
-
-	// meta flag, whether time should be imported
-	NeedsTime bool
 }
 
 type typeData struct {
@@ -139,21 +136,6 @@ func createModel(definitions spec.Definitions) (model modelData, readOnlyTypes m
 	}
 
 	sortModel(model)
-
-	for _, t := range model.Types {
-		if t.Type == "time.Time" {
-			model.NeedsTime = true
-			return
-		}
-
-		for _, p := range t.Props {
-			if strings.Contains(p.Type, "time.Time") {
-				model.NeedsTime = true
-				return
-			}
-		}
-	}
-
 	return
 }
 

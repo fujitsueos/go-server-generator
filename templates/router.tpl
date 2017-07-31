@@ -16,12 +16,6 @@ package router
 import (
 	"encoding/json"
 	"net/http"
-	{{ if .NeedsStrings -}}
-		"strings"
-	{{ end -}}
-	{{ if .NeedsTime -}}
-		"time"
-	{{ end -}}
 
 	"github.com/julienschmidt/httprouter"
 	log "github.com/sirupsen/logrus"
