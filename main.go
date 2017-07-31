@@ -2,6 +2,7 @@ package main
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 
 	"github.com/fujitsueos/go-server-generator/generate"
@@ -11,6 +12,12 @@ import (
 	"github.com/go-openapi/validate"
 	log "github.com/sirupsen/logrus"
 )
+
+func init() {
+	if err := exec.Command("goimport").Run(); err != nil {
+		log.Fatal("Could not run goimports, make sure it's installed.\nInstall it by running:\ngo get golang.org/x/tools/cmd/goimports")
+	}
+}
 
 func main() {
 	if len(os.Args) != 2 {
@@ -109,6 +116,10 @@ func createOutputFile(swaggerPath, relativePath string) (file *os.File, packageN
 	}
 
 	closeFile = func() {
+		log.Infof("Format file %s", path)
+		if err := exec.Command("goimports", "-w", path).Run(); err != nil {
+			log.Errorf("Could not format file %s", path)
+		}
 		if err := file.Close(); err != nil {
 			log.Error(err)
 		}

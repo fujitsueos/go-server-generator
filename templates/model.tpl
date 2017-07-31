@@ -28,11 +28,6 @@ package model
 // This is a generated file
 // Manual changes will be overwritten
 
-{{ if .NeedsTime -}}
-import "time"
-
-{{ end -}}
-
 {{ range .Types -}}
   {{ if .IsStruct -}}
     {{ template "modelStruct" dict "Struct" . "ReadOnly" "" }}

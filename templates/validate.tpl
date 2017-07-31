@@ -202,11 +202,6 @@ package model
 // This is a generated file
 // Manual changes will be overwritten
 
-import (
-	"fmt"
-	"strings"
-)
-
 // ValidationError contains all validation errors for a model type
 type ValidationError struct {
 	errors []string

@@ -16,10 +16,6 @@ import (
 type routerData struct {
 	Routes       []routeData
 	ModelPackage string
-
-	// meta flags, whether time and strings should be imported
-	NeedsTime    bool
-	NeedsStrings bool
 }
 
 type routeData struct {
@@ -131,15 +127,6 @@ func createRouter(paths *spec.Paths, readOnlyTypes map[string]bool) (router rout
 		}
 
 		prevTag = route.Tag
-
-		for _, p := range route.Params {
-			if strings.Contains(p.Type, "time.Time") {
-				router.NeedsTime = true
-			}
-			if p.IsArray {
-				router.NeedsStrings = true
-			}
-		}
 	}
 
 	return
