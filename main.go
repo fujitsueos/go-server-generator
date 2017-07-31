@@ -14,7 +14,7 @@ import (
 )
 
 func init() {
-	if err := exec.Command("goimport").Run(); err != nil {
+	if err := exec.Command("goimports").Run(); err != nil {
 		log.Fatal("Could not run goimports, make sure it's installed.\nInstall it by running:\ngo get golang.org/x/tools/cmd/goimports")
 	}
 }
