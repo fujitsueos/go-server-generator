@@ -41,12 +41,14 @@ type bodyData struct {
 }
 
 type paramData struct {
-	Location string
-	Name     string
-	RawName  string
-	Type     string
-	Required bool
-	IsArray  bool
+	Location       string
+	Name           string
+	RawName        string
+	Type           string
+	Validation     validation
+	ItemValidation *stringValidation
+	Required       bool
+	IsArray        bool
 }
 
 var routerTemplate *template.Template
@@ -244,8 +246,13 @@ func createparamData(location string, params map[string]*spec.Parameter) (data [
 			return
 		}
 
-		t := "string"
-		isArray := false
+		pData := paramData{
+			Location: location,
+			Name:     location + goFormat(param.Name),
+			RawName:  param.Name,
+			Required: param.Required,
+			Type:     "string",
+		}
 
 		if param.Type == "string" {
 			if !(param.Format == "" || param.Format == "date-time" || param.Format == "password") {
@@ -255,10 +262,22 @@ func createparamData(location string, params map[string]*spec.Parameter) (data [
 			}
 
 			if param.Format == "date-time" {
-				t = "time.Time"
+				pData.Type = "time.Time"
+
+				if err = checkUnsupportedParamValidation(param.CommonValidations, []string{}); err != nil {
+					return
+				}
+			} else {
+				if pData.Validation, err = getParamValidation("string", param.CommonValidations); err != nil {
+					return
+				}
+
+				if err = checkUnsupportedParamValidation(param.CommonValidations, []string{"minLength", "maxLength", "enum"}); err != nil {
+					return
+				}
 			}
 		} else { // "array"
-			isArray = true
+			pData.IsArray = true
 
 			if !(param.Items.Type == "string" && param.Items.Format == "") {
 				err = errors.New("Only arrays of strings are supported")
@@ -271,16 +290,27 @@ func createparamData(location string, params map[string]*spec.Parameter) (data [
 				logger.Error(err)
 				return
 			}
+
+			if pData.Validation, err = getParamValidation("array", param.CommonValidations); err != nil {
+				return
+			}
+			var itemValidation validation
+			if itemValidation, err = getParamValidation("string", param.Items.CommonValidations); err != nil {
+				return
+			}
+			if itemValidation.String != nil {
+				pData.ItemValidation = itemValidation.String
+			}
+
+			if err = checkUnsupportedParamValidation(param.CommonValidations, []string{"minItems", "maxItems", "uniqueItems"}); err != nil {
+				return
+			}
+			if err = checkUnsupportedParamValidation(param.Items.CommonValidations, []string{"minLength", "maxLength", "enum"}); err != nil {
+				return
+			}
 		}
 
-		data = append(data, paramData{
-			Location: location,
-			Name:     location + goFormat(param.Name),
-			RawName:  param.Name,
-			Type:     t,
-			Required: param.Required,
-			IsArray:  isArray,
-		})
+		data = append(data, pData)
 	}
 
 	return
@@ -318,6 +348,101 @@ func createResultType(responses *spec.Responses, readOnlyTypes map[string]bool) 
 				return
 			}
 		}
+	}
+
+	return
+}
+
+func getParamValidation(t string, validations spec.CommonValidations) (val validation, err error) {
+	switch t {
+	case "string":
+		stringVal := &stringValidation{}
+
+		if validations.Enum != nil {
+			stringVal.Enum = make([]string, len(validations.Enum))
+			for i := range validations.Enum {
+				var ok bool
+				if stringVal.Enum[i], ok = validations.Enum[i].(string); !ok {
+					err = errors.New("Invalid enum value")
+					logger.WithField("enum", validations.Enum[i]).Error(err)
+					return
+				}
+			}
+			stringVal.FlattenedEnum = flattenEnum(stringVal.Enum, ", ", "\"")
+			val.String = stringVal
+		}
+		if validations.MinLength != nil {
+			stringVal.HasMinLength = true
+			stringVal.MinLength = *validations.MinLength
+			val.String = stringVal
+		}
+		if validations.MaxLength != nil {
+			stringVal.HasMaxLength = true
+			stringVal.MaxLength = *validations.MaxLength
+			val.String = stringVal
+		}
+	case "array":
+		arrayVal := &arrayValidation{}
+
+		if validations.MinItems != nil {
+			arrayVal.HasMinItems = true
+			arrayVal.MinItems = *validations.MinItems
+			val.Array = arrayVal
+		}
+		if validations.MaxItems != nil {
+			arrayVal.HasMaxItems = true
+			arrayVal.MaxItems = *validations.MaxItems
+			val.Array = arrayVal
+		}
+		if validations.UniqueItems {
+			arrayVal.UniqueItems = true
+			val.Array = arrayVal
+		}
+	default:
+		err = errors.New("Unsupported type")
+		logger.WithField("type", t).Error(err)
+	}
+
+	return
+}
+
+func checkUnsupportedParamValidation(validations spec.CommonValidations, allowedValidations []string) (err error) {
+	allowValdationsMap := make(map[string]struct{})
+	for _, validation := range allowedValidations {
+		allowValdationsMap[validation] = struct{}{}
+	}
+
+	unsupportedValidations := make([]string, 0)
+
+	addUnsupportedValidation := func(validationPresent bool, name string) {
+		if validationPresent {
+			if _, validationAllowed := allowValdationsMap[name]; !validationAllowed {
+				unsupportedValidations = append(unsupportedValidations, name)
+			}
+		}
+	}
+
+	// pointers
+	addUnsupportedValidation(validations.Maximum != nil, "maximum")
+	addUnsupportedValidation(validations.MaxItems != nil, "maxItems")
+	addUnsupportedValidation(validations.MaxLength != nil, "maxLength")
+	addUnsupportedValidation(validations.Minimum != nil, "minimum")
+	addUnsupportedValidation(validations.MinItems != nil, "minItems")
+	addUnsupportedValidation(validations.MinLength != nil, "minLength")
+	addUnsupportedValidation(validations.MultipleOf != nil, "multipleOf")
+
+	// slice / string
+	addUnsupportedValidation(len(validations.Enum) > 0, "enum")
+	addUnsupportedValidation(len(validations.Pattern) > 0, "pattern")
+
+	// booleans
+	addUnsupportedValidation(validations.ExclusiveMaximum, "exclusiveMaximum")
+	addUnsupportedValidation(validations.ExclusiveMinimum, "exclusiveMinimum")
+	addUnsupportedValidation(validations.UniqueItems, "uniqueItems")
+
+	if len(unsupportedValidations) > 0 {
+		err = errors.New("Unsupported validations")
+		logger.WithField("unsupportedValidations", unsupportedValidations).Error(err)
 	}
 
 	return

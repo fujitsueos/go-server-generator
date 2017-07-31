@@ -1,13 +1,14 @@
 {{/* Input: { Type, ReadOnly } */}}
 {{ define "validateType" -}}
 	// Validate validates a {{ .ReadOnly }}{{ .Type.Name }} based on the swagger spec
-	func (s *{{ .ReadOnly }}{{ .Type.Name }}) Validate() (err *ValidationError) {
+	func (s *{{ .ReadOnly }}{{ .Type.Name }}) Validate() (err error) {
 		var errors []string
 
 		{{ if .Type.IsStruct -}}
 			{{ if .ReadOnly -}}
 				if e := s.{{ .Type.Name }}.Validate(); e != nil {
-					errors = append(errors, e.errors...)
+					valErr, _ := e.(*ValidationError)
+					errors = append(errors, valErr.errors...)
 				}
 			{{ end -}}
 
@@ -29,7 +30,8 @@
 						{{ template "validateString" dict "Validation" .Validation.String "String" (print "*s." .Name) "Name" .JSONName -}}
 					{{ else if not (eq .Type "bool" "time.Time") }}
 						if e := s.{{ .Name }}.Validate(); e != nil {
-							errors = append(errors, e.errors...)
+							valErr, _ := e.(*ValidationError)
+							errors = append(errors, valErr.errors...)
 						}
 					{{ end -}}
 				{{ end -}}
@@ -39,9 +41,7 @@
 		{{ end -}}
 
 		if len(errors) > 0 {
-			err = &ValidationError{
-				errors,
-			}
+			err = NewValidationError(errors)
 		}
 
 		return
@@ -92,10 +92,11 @@
 				{{- template "validateString" dict "Validation" .ItemValidation.String "String" "elt" "Name" (print .Name "[%d]") "FormatParams" "i" -}}
 			}
 		{{ end -}}
-	{{ else }}
+	{{ else if not (eq .ItemType "bool" "time.Time") }}
 		for _, elt := range {{ .Slice }} {
 			if e := elt.Validate(); e != nil {
-				errors = append(errors, e.errors...)
+				valErr, _ := e.(*ValidationError)
+				errors = append(errors, valErr.errors...)
 			}
 		}
 	{{ end -}}
@@ -211,6 +212,13 @@ func (e *ValidationError) Error() string {
 	return strings.Join(e.errors, "\n")
 }
 
+// NewValidationError returns a new validation error
+func NewValidationError(errors []string) *ValidationError {
+	return &ValidationError{
+		errors,
+	}
+}
+
 {{ range .Types -}}
 	{{ if or .IsStruct .IsSlice -}}
 		{{ template "validateType" dict "Type" . "ReadOnly" "" }}
@@ -219,7 +227,7 @@ func (e *ValidationError) Error() string {
     {{ end -}}
 	{{ else -}}
 		// Validate validates a {{ .Name }} based on the swagger spec
-		func (s *{{ .Name }}) Validate() (err *ValidationError) {
+		func (s *{{ .Name }}) Validate() (err error) {
 			var errors []string
 
 			{{ if eq .Type "int64" -}}
@@ -231,9 +239,7 @@ func (e *ValidationError) Error() string {
 			{{ end }}
 
 			if len(errors) > 0 {
-				err = &ValidationError{
-					errors,
-				}
+				err = NewValidationError(errors)
 			}
 
 			return
