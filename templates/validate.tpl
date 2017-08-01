@@ -1,14 +1,11 @@
 {{/* Input: { Type, ReadOnly } */}}
 {{ define "validateType" -}}
 	// Validate validates a {{ .ReadOnly }}{{ .Type.Name }} based on the swagger spec
-	func (s *{{ .ReadOnly }}{{ .Type.Name }}) Validate() (err error) {
-		var errors []string
-
+	func (s *{{ .ReadOnly }}{{ .Type.Name }}) Validate() (errors []string) {
 		{{ if .Type.IsStruct -}}
 			{{ if .ReadOnly -}}
-				if e := s.{{ .Type.Name }}.Validate(); e != nil {
-					valErr, _ := e.(*ValidationError)
-					errors = append(errors, valErr.errors...)
+				if e := s.{{ .Type.Name }}.Validate(); len(e) > 0 {
+					errors = append(errors, e...)
 				}
 			{{ end -}}
 
@@ -29,9 +26,8 @@
 					{{ else if eq .Type "string" -}}
 						{{ template "validateString" dict "Validation" .Validation.String "String" (print "*s." .Name) "Name" .JSONName -}}
 					{{ else if not (eq .Type "bool" "time.Time") }}
-						if e := s.{{ .Name }}.Validate(); e != nil {
-							valErr, _ := e.(*ValidationError)
-							errors = append(errors, valErr.errors...)
+						if e := s.{{ .Name }}.Validate(); len(e) > 0 {
+							errors = append(errors, e...)
 						}
 					{{ end -}}
 				{{ end -}}
@@ -39,10 +35,6 @@
 		{{ else }}{{/* .Type.IsSlice */ -}}
 			{{ template "validateSlice" dict "Validation" .Type.Validation.Array "Slice" "*s" "Name" .Type.Name "ItemType" (print .ReadOnly .Type.ItemType) "ItemValidation" .Type.ItemValidation -}}
 		{{ end -}}
-
-		if len(errors) > 0 {
-			err = NewValidationError(errors)
-		}
 
 		return
 	}
@@ -94,9 +86,8 @@
 		{{ end -}}
 	{{ else if not (eq .ItemType "bool" "time.Time") }}
 		for _, elt := range {{ .Slice }} {
-			if e := elt.Validate(); e != nil {
-				valErr, _ := e.(*ValidationError)
-				errors = append(errors, valErr.errors...)
+			if e := elt.Validate(); len(e) > 0 {
+				errors = append(errors, e...)
 			}
 		}
 	{{ end -}}
@@ -203,22 +194,6 @@ package model
 // This is a generated file
 // Manual changes will be overwritten
 
-// ValidationError contains all validation errors for a model type
-type ValidationError struct {
-	errors []string
-}
-
-func (e *ValidationError) Error() string {
-	return strings.Join(e.errors, "\n")
-}
-
-// NewValidationError returns a new validation error
-func NewValidationError(errors []string) *ValidationError {
-	return &ValidationError{
-		errors,
-	}
-}
-
 {{ range .Types -}}
 	{{ if or .IsStruct .IsSlice -}}
 		{{ template "validateType" dict "Type" . "ReadOnly" "" }}
@@ -227,9 +202,7 @@ func NewValidationError(errors []string) *ValidationError {
     {{ end -}}
 	{{ else -}}
 		// Validate validates a {{ .Name }} based on the swagger spec
-		func (s *{{ .Name }}) Validate() (err error) {
-			var errors []string
-
+		func (s *{{ .Name }}) Validate() (errors []string) {
 			{{ if eq .Type "int64" -}}
 				{{ template "validateInt64" dict "Validation" .Validation.Int "Int" "int64(*s)" "Name" .Name -}}
 			{{ else if eq .Type "float64" -}}
@@ -237,10 +210,6 @@ func NewValidationError(errors []string) *ValidationError {
 			{{ else if eq .Type "string" -}}
 				{{ template "validateString" dict "Validation" .Validation.String "String" "string(*s)" "Name" .Name -}}
 			{{ end }}
-
-			if len(errors) > 0 {
-				err = NewValidationError(errors)
-			}
 
 			return
 		}
