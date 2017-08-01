@@ -89,10 +89,15 @@ func Recoverer(next http.Handler) http.Handler {
 				result model.{{ if .ReadOnlyResult }}ReadOnly{{ end }}{{ .ResultType }}
 			{{ end -}}
 			err error
+			errors []string
 		)
 
-		if data, err = parse{{ .HandlerName }}Data(r, params); err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
+		if data, errors = parse{{ .HandlerName }}Data(r, params); len(errors) > 0 {
+			log.WithFields(log.Fields{
+				"handler": "{{ .Name }}",
+				"errors": strings.Join(errors, "\n"),
+			})
+			http.Error(w, strings.Join(errors, "\n"), http.StatusBadRequest)
 			return
 		}
 
@@ -110,10 +115,10 @@ func Recoverer(next http.Handler) http.Handler {
 		}
 
 		{{ if .ResultType -}}
-			if err := result.Validate(); err != nil {
+			if errors = result.Validate(); len(errors) > 0 {
 				log.WithFields(log.Fields{
 					"dataType": "{{ if .ReadOnlyResult }}ReadOnly{{ end }}{{ .ResultType }}",
-					"error": err.Error(),
+					"error": strings.Join(errors, "\n"),
 				}).Error("Invalid response data")
 				http.Error(w, "Internal server error", http.StatusInternalServerError)
 				return
@@ -152,9 +157,7 @@ func respondJSON(w http.ResponseWriter, data interface{}, dataType string) {
 		{{ end -}}
 	}
 
-	func parse{{ .HandlerName }}Data(r *http.Request, {{ if .HasPathParams }}params{{ else }}_{{ end }} httprouter.Params) (data {{ .Name }}Data, err error) {
-		var errors []string
-
+	func parse{{ .HandlerName }}Data(r *http.Request, {{ if .HasPathParams }}params{{ else }}_{{ end }} httprouter.Params) (data {{ .Name }}Data, errors []string) {
 		{{ if .HasQueryParams -}}
 			query := r.URL.Query()
 		{{ end -}}
@@ -168,7 +171,13 @@ func respondJSON(w http.ResponseWriter, data interface{}, dataType string) {
 					return
 				}
 			{{ else if .IsArray -}}
-				data.{{ .Name }} = strings.Split({{ template "getParam" .Location }}("{{ .RawName }}"), ",")
+				{{ .Name }} := {{ template "getParam" .Location }}("{{ .RawName }}")
+				// we treat the empty string as an empty array, rather than an array with one empty element
+				if len({{ .Name }}) == 0 {
+					data.{{ .Name }} = []string{}
+				} else {
+					data.{{ .Name }} = strings.Split({{ .Name }}, ",")
+				}
 				{{ if .Validation.Array -}}
 					errors = append(errors, validateArray(data.{{ .Name }}, "{{ .RawName }}",
 						{{- if .Validation.Array.HasMinItems -}} {{ .Validation.Array.MinItems }} {{- else -}} nil {{- end -}},
@@ -197,25 +206,17 @@ func respondJSON(w http.ResponseWriter, data interface{}, dataType string) {
 			{{ end }}
 		{{ end -}}
 
-		if len(errors) > 0 {
-			err = model.NewValidationError(errors)
-			return
-		}
-
 		{{ if .Body -}}
-			if err = json.NewDecoder(r.Body).Decode(&data.{{ .Body.Name }}); err != nil {
+			if err := json.NewDecoder(r.Body).Decode(&data.{{ .Body.Name }}); err != nil {
+				errors = append(errors, err.Error())
 				log.WithFields(log.Fields{
 					"bodyType": "{{ .Body.Type }}",
-					"error": err.Error(),
+					"error": err,
 				}).Error("Failed to parse body data")
 				return
 			}
-			if err = data.{{ .Body.Name }}.Validate(); err != nil {
-				log.WithFields(log.Fields{
-					"bodyType": "{{ .Body.Type }}",
-					"error": err.Error(),
-				}).Error("Invalid body data")
-				return
+			if e := data.{{ .Body.Name }}.Validate(); len(e) > 0 {
+				errors = append(errors, e...)
 			}
 		{{ end -}}
 
