@@ -82,9 +82,8 @@ func Recoverer(next http.Handler) http.Handler {
 }
 
 {{ range .Routes -}}
-	func (m *middleware) {{ .Name }}(w http.ResponseWriter, r *http.Request, params httprouter.Params) {
+	func (m *middleware) {{ .Name }}(w http.ResponseWriter, r *http.Request, {{ if .HasPathParams }}params{{ else }}_{{ end }} httprouter.Params) {
 		var (
-			data {{ .Name }}Data
 			{{ if .ResultType -}}
 				result model.{{ if .ReadOnlyResult }}ReadOnly{{ end }}{{ .ResultType }}
 			{{ end -}}
@@ -92,7 +91,70 @@ func Recoverer(next http.Handler) http.Handler {
 			errors []string
 		)
 
-		if data, errors = parse{{ .HandlerName }}Data(r, params); len(errors) > 0 {
+		{{ if .HasQueryParams -}}
+			query := r.URL.Query()
+		{{ end -}}
+		{{ range .Params -}}
+			{{ if eq .Type "time.Time" -}}
+				var {{ .Name }} time.Time
+				if {{ .Name }}, err = time.Parse(time.RFC3339, {{ template "getParam" .Location }}("{{ .RawName }}")); err != nil {
+					log.WithFields(log.Fields{
+						"field": "{{ .RawName }}",
+						"value": {{ template "getParam" .Location }}("{{ .RawName }}"),
+					}).Error("Failed to parse time")
+					errors = append(errors, "Failed to parse {{ .RawName }} as time")
+				}
+			{{ else if .IsArray -}}
+				var {{ .Name }} []string
+				{{ .Name }}Raw := {{ template "getParam" .Location }}("{{ .RawName }}")
+				// we treat the empty string as an empty array, rather than an array with one empty element
+				if len({{ .Name }}Raw) == 0 {
+					{{ .Name }} = []string{}
+				} else {
+					{{ .Name }} = strings.Split({{ .Name }}Raw, ",")
+				}
+				{{ if .Validation.Array -}}
+					errors = append(errors, validateArray({{ .Name }}, "{{ .RawName }}",
+						{{- if .Validation.Array.HasMinItems -}} {{ .Validation.Array.MinItems }} {{- else -}} nil {{- end -}},
+						{{- if .Validation.Array.HasMaxItems -}} {{ .Validation.Array.MaxItems }} {{- else -}} nil {{- end -}},
+						{{- .Validation.Array.UniqueItems -}}
+					)...)
+				{{ end -}}
+				{{ if .ItemValidation -}}
+					for i := range {{ .Name }} {
+						errors = append(errors, validateString({{ .Name }}[i], fmt.Sprintf("{{ .RawName }}[%d]", i),
+							{{- if .ItemValidation.HasMinLength -}} {{ .ItemValidation.MinLength }} {{- else -}} nil {{- end -}},
+							{{- if .ItemValidation.HasMaxLength -}} {{ .ItemValidation.MaxLength }} {{- else -}} nil {{- end -}},
+							{{- if .ItemValidation.Enum -}} []string{ {{ .ItemValidation.FlattenedEnum }} } {{- else -}} nil {{- end -}}
+						)...)
+					}
+				{{ end -}}
+			{{ else -}}
+				{{ .Name }} := {{ template "getParam" .Location }}("{{ .RawName }}")
+				{{ if .Validation.String -}}
+					errors = append(errors, validateString({{ .Name }}, "{{ .RawName }}",
+						{{- if .Validation.String.HasMinLength -}} {{ .Validation.String.MinLength }} {{- else -}} nil {{- end -}},
+						{{- if .Validation.String.HasMaxLength -}} {{ .Validation.String.MaxLength }} {{- else -}} nil {{- end -}},
+						{{- if .Validation.String.Enum -}} []string{ {{ .Validation.String.FlattenedEnum }} } {{- else -}} nil {{- end -}}
+					)...)
+				{{ end -}}
+			{{ end }}
+		{{ end -}}
+
+		{{ if .Body -}}
+			var {{ .Body.Name }} model.{{ .Body.Type }}
+			if err = json.NewDecoder(r.Body).Decode(&{{ .Body.Name }}); err != nil {
+				errors = append(errors, err.Error())
+				log.WithFields(log.Fields{
+					"bodyType": "{{ .Body.Type }}",
+					"error": err,
+				}).Error("Failed to parse body data")
+			} else if e := {{ .Body.Name }}.Validate(); len(e) > 0 {
+				errors = append(errors, e...)
+			}
+		{{ end -}}
+
+		if len(errors) > 0 {
 			log.WithFields(log.Fields{
 				"handler": "{{ .Name }}",
 				"errors": strings.Join(errors, "\n"),
@@ -103,10 +165,10 @@ func Recoverer(next http.Handler) http.Handler {
 
 		if {{ if .ResultType }}result, {{ end }}err = m.handler.{{ .HandlerName }}(
 			{{- range .Params -}}
-				data.{{ .Name }},
+				{{ .Name }},
 			{{- end -}}
 			{{- if .Body -}}
-				data.{{ .Body.Name }}
+				{{ .Body.Name }}
 			{{- end -}}
 		); err != nil {
 			message, code := m.errorTransformer.Transform(err)
@@ -146,83 +208,6 @@ func respondJSON(w http.ResponseWriter, data interface{}, dataType string) {
 	w.Header().Set("Content-Type", "application/json")
 	w.Write(json)
 }
-
-{{ range .Routes -}}
-	type {{ .Name }}Data struct {
-		{{- range .Params -}}
-			{{ .Name }} {{ if .IsArray }}[]{{ end }}{{ .Type }}
-		{{ end -}}
-		{{ if .Body -}}
-			{{ .Body.Name }} model.{{ .Body.Type }}
-		{{ end -}}
-	}
-
-	func parse{{ .HandlerName }}Data(r *http.Request, {{ if .HasPathParams }}params{{ else }}_{{ end }} httprouter.Params) (data {{ .Name }}Data, errors []string) {
-		{{ if .HasQueryParams -}}
-			query := r.URL.Query()
-		{{ end -}}
-		{{ range .Params -}}
-			{{ if eq .Type "time.Time" -}}
-				if data.{{ .Name }}, err = time.Parse(time.RFC3339, {{ template "getParam" .Location }}("{{ .RawName }}")); err != nil {
-					log.WithFields(log.Fields{
-						"field": "{{ .RawName }}",
-						"value": {{ template "getParam" .Location }}("{{ .RawName }}"),
-					}).Error("Failed to parse time")
-					return
-				}
-			{{ else if .IsArray -}}
-				{{ .Name }} := {{ template "getParam" .Location }}("{{ .RawName }}")
-				// we treat the empty string as an empty array, rather than an array with one empty element
-				if len({{ .Name }}) == 0 {
-					data.{{ .Name }} = []string{}
-				} else {
-					data.{{ .Name }} = strings.Split({{ .Name }}, ",")
-				}
-				{{ if .Validation.Array -}}
-					errors = append(errors, validateArray(data.{{ .Name }}, "{{ .RawName }}",
-						{{- if .Validation.Array.HasMinItems -}} {{ .Validation.Array.MinItems }} {{- else -}} nil {{- end -}},
-						{{- if .Validation.Array.HasMaxItems -}} {{ .Validation.Array.MaxItems }} {{- else -}} nil {{- end -}},
-						{{- .Validation.Array.UniqueItems -}}
-					)...)
-				{{ end -}}
-				{{ if .ItemValidation -}}
-					for i := range data.{{ .Name }} {
-						errors = append(errors, validateString(data.{{ .Name }}[i], fmt.Sprintf("{{ .RawName }}[%d]", i),
-							{{- if .ItemValidation.HasMinLength -}} {{ .ItemValidation.MinLength }} {{- else -}} nil {{- end -}},
-							{{- if .ItemValidation.HasMaxLength -}} {{ .ItemValidation.MaxLength }} {{- else -}} nil {{- end -}},
-							{{- if .ItemValidation.Enum -}} []string{ {{ .ItemValidation.FlattenedEnum }} } {{- else -}} nil {{- end -}}
-						)...)
-					}
-				{{ end -}}
-			{{ else -}}
-				data.{{ .Name }} = {{ template "getParam" .Location }}("{{ .RawName }}")
-				{{ if .Validation.String -}}
-					errors = append(errors, validateString(data.{{ .Name }}, "{{ .RawName }}",
-						{{- if .Validation.String.HasMinLength -}} {{ .Validation.String.MinLength }} {{- else -}} nil {{- end -}},
-						{{- if .Validation.String.HasMaxLength -}} {{ .Validation.String.MaxLength }} {{- else -}} nil {{- end -}},
-						{{- if .Validation.String.Enum -}} []string{ {{ .Validation.String.FlattenedEnum }} } {{- else -}} nil {{- end -}}
-					)...)
-				{{ end -}}
-			{{ end }}
-		{{ end -}}
-
-		{{ if .Body -}}
-			if err := json.NewDecoder(r.Body).Decode(&data.{{ .Body.Name }}); err != nil {
-				errors = append(errors, err.Error())
-				log.WithFields(log.Fields{
-					"bodyType": "{{ .Body.Type }}",
-					"error": err,
-				}).Error("Failed to parse body data")
-				return
-			}
-			if e := data.{{ .Body.Name }}.Validate(); len(e) > 0 {
-				errors = append(errors, e...)
-			}
-		{{ end -}}
-
-		return
-	}
-{{ end -}}
 
 func validateString(s, name string, minLength, maxLength *int, enum []string) (errors []string) {
 	if minLength != nil {
