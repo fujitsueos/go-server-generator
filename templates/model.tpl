@@ -11,7 +11,7 @@
         {{ if .Description -}}
           // {{ .Description }}
         {{ end -}}
-        {{ .Name }} {{ if .IsSlice }}[]{{ .ItemType }}{{ else }}*{{ .Type }}{{ end }} `json:"{{ .JSONName }}"`
+        {{ .Name }} {{ if .IsSlice }}[]{{ .ItemType }}{{ else }}*{{ .Type }}{{ end }} `json:"{{ .JSONName }}" db:"{{ .JSONName }}"`
       {{ end -}}
     {{ end -}}
   }
