@@ -14,20 +14,20 @@
 					{{ if .IsRequired }}
 						if s.{{ .Name }} == nil {
 							errors = append(errors, "{{ .JSONName }} is required")
-						}
-					{{ end -}}
-
-					{{ if .IsSlice -}}
-						{{ template "validateSlice" dict "Validation" .Validation.Array "Slice" (print "s." .Name) "Name" .JSONName "ItemType" .ItemType "ItemValidation" .ItemValidation -}}
-					{{ else if eq .Type "int64" -}}
-						{{ template "validateInt64" dict "Validation" .Validation.Int "Int" (print "*s." .Name) "Name" .JSONName -}}
-					{{ else if eq .Type "float64" -}}
-						{{ template "validateFloat64" dict "Validation" .Validation.Number "Number" (print "*s." .Name) "Name" .JSONName -}}
-					{{ else if eq .Type "string" -}}
-						{{ template "validateString" dict "Validation" .Validation.String "String" (print "*s." .Name) "Name" .JSONName -}}
-					{{ else if not (eq .Type "bool" "time.Time") }}
-						if e := s.{{ .Name }}.Validate(); len(e) > 0 {
-							errors = append(errors, e...)
+						} else {
+							{{ if .IsSlice -}}
+								{{ template "validateSlice" dict "Validation" .Validation.Array "Slice" (print "s." .Name) "Name" .JSONName "ItemType" .ItemType "ItemValidation" .ItemValidation -}}
+							{{ else if eq .Type "int64" -}}
+								{{ template "validateInt64" dict "Validation" .Validation.Int "Int" (print "*s." .Name) "Name" .JSONName -}}
+							{{ else if eq .Type "float64" -}}
+								{{ template "validateFloat64" dict "Validation" .Validation.Number "Number" (print "*s." .Name) "Name" .JSONName -}}
+							{{ else if eq .Type "string" -}}
+								{{ template "validateString" dict "Validation" .Validation.String "String" (print "*s." .Name) "Name" .JSONName -}}
+							{{ else if not (eq .Type "bool" "time.Time") }}
+								if e := s.{{ .Name }}.Validate(); len(e) > 0 {
+									errors = append(errors, e...)
+								}
+							{{ end -}}
 						}
 					{{ end -}}
 				{{ end -}}

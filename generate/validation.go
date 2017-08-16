@@ -191,7 +191,7 @@ func getValidationForType(t string, isSlice bool, schema spec.Schema) (val valid
 	case "bool":
 		err = checkUnsupportedFields(t, schema, []string{"readOnly"})
 	case "time.Time":
-		err = checkUnsupportedFields(t, schema, []string{"readOnly"})
+		err = checkUnsupportedFields(t, schema, []string{"format", "readOnly"})
 	case "struct":
 		if schema.Required != nil {
 			val.Object = &objectValidation{
