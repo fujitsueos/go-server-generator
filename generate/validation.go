@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"strings"
-	"text/template"
 
 	"github.com/go-openapi/spec"
 )
@@ -61,15 +60,6 @@ type stringValidation struct {
 	MaxLength     int64
 	HasMinLength  bool
 	MinLength     int64
-}
-
-var validateTemplate *template.Template
-
-func init() {
-	var err error
-	if validateTemplate, err = readTemplateFromFile("validate", "validate.tpl"); err != nil {
-		logger.Fatal(err)
-	}
 }
 
 func getValidationForType(t string, isSlice bool, schema spec.Schema) (val validation, err error) {

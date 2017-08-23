@@ -2,11 +2,7 @@ package generate
 
 import (
 	"errors"
-	"io/ioutil"
-	"os"
-	"path"
 	"strings"
-	"text/template"
 	"unicode"
 
 	"github.com/go-openapi/spec"
@@ -21,39 +17,6 @@ var logger log.FieldLogger = log.New()
 // to reset the logger after the function returns
 func restoreLogger(previousLogger log.FieldLogger) {
 	logger = previousLogger
-}
-
-func readTemplateFromFile(name, fileName string) (t *template.Template, err error) {
-	gopath := os.Getenv("GOPATH")
-
-	absolutePath := path.Join(gopath, "/src/github.com/fujitsueos/go-server-generator/templates", fileName)
-
-	file, err := ioutil.ReadFile(absolutePath)
-	if err != nil {
-		return
-	}
-
-	t, err = template.New(name).Funcs(template.FuncMap{
-		// allow on-the-fly maps in templates; see https://stackoverflow.com/a/18276968/2095090
-		"dict": func(values ...interface{}) (dict map[string]interface{}, err error) {
-			if len(values)%2 != 0 {
-				err = errors.New("invalid dict call")
-				return
-			}
-			dict = make(map[string]interface{}, len(values)/2)
-			for i := 0; i < len(values); i += 2 {
-				key, ok := values[i].(string)
-				if !ok {
-					err = errors.New("dict keys must be strings")
-					return
-				}
-				dict[key] = values[i+1]
-			}
-			return
-		},
-	}).Parse(string(file))
-
-	return
 }
 
 func getRefName(ref spec.Ref) (name string, err error) {

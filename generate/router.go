@@ -7,8 +7,8 @@ import (
 	"regexp"
 	"sort"
 	"strings"
-	"text/template"
 
+	"github.com/fujitsueos/go-server-generator/templates"
 	"github.com/go-openapi/spec"
 	log "github.com/sirupsen/logrus"
 )
@@ -51,15 +51,6 @@ type paramData struct {
 	IsArray        bool
 }
 
-var routerTemplate *template.Template
-
-func init() {
-	var err error
-	if routerTemplate, err = readTemplateFromFile("router", "router.tpl"); err != nil {
-		logger.Fatal(err)
-	}
-}
-
 // Router generates the model based on a definitions spec
 func Router(w io.Writer, paths *spec.Paths, readOnlyTypes map[string]bool, modelPackage string) (err error) {
 	var router routerData
@@ -69,7 +60,7 @@ func Router(w io.Writer, paths *spec.Paths, readOnlyTypes map[string]bool, model
 
 	router.ModelPackage = modelPackage
 
-	err = routerTemplate.Execute(w, router)
+	err = templates.Router.Execute(w, router)
 	return
 }
 

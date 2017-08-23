@@ -5,8 +5,8 @@ import (
 	"io"
 	"sort"
 	"strings"
-	"text/template"
 
+	"github.com/fujitsueos/go-server-generator/templates"
 	"github.com/go-openapi/spec"
 	log "github.com/sirupsen/logrus"
 )
@@ -54,15 +54,6 @@ type propsData struct {
 	Type string
 }
 
-var modelTemplate *template.Template
-
-func init() {
-	var err error
-	if modelTemplate, err = readTemplateFromFile("model", "model.tpl"); err != nil {
-		logger.Fatal(err)
-	}
-}
-
 // Model generates the model based on a definitions spec
 func Model(modelWriter io.Writer, validateWriter io.Writer, definitions spec.Definitions) (readOnlyTypes map[string]bool, err error) {
 	var model modelData
@@ -70,11 +61,11 @@ func Model(modelWriter io.Writer, validateWriter io.Writer, definitions spec.Def
 		return
 	}
 
-	if err = modelTemplate.Execute(modelWriter, model); err != nil {
+	if err = templates.Model.Execute(modelWriter, model); err != nil {
 		return
 	}
 
-	err = validateTemplate.Execute(validateWriter, model)
+	err = templates.Validate.Execute(validateWriter, model)
 
 	return
 }

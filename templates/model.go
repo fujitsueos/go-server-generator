@@ -1,4 +1,8 @@
-{{/* Input: { Struct, ReadOnly } */ -}}
+package templates
+
+// Model is a template for the model file
+var Model = parse("model",
+	`{{/* Input: { Struct, ReadOnly } */ -}}
 {{ define "modelStruct" -}}
   // {{ .ReadOnly }}{{ .Struct.Name }}
     {{- if .Struct.Description }} {{ .Struct.Description }}{{ else }} No description provided{{ end }}
@@ -11,7 +15,7 @@
         {{ if .Description -}}
           // {{ .Description }}
         {{ end -}}
-        {{ .Name }} {{ if .IsSlice }}[]{{ .ItemType }}{{ else }}*{{ .Type }}{{ end }} `json:"{{ .JSONName }}" db:"{{ .JSONName }}"`
+        {{ .Name }} {{ if .IsSlice }}[]{{ .ItemType }}{{ else }}*{{ .Type }}{{ end }} 'json:"{{ .JSONName }}" db:"{{ .JSONName }}"'
       {{ end -}}
     {{ end -}}
   }
@@ -44,3 +48,4 @@ package model
     type {{ .Name }} {{ .Type }}
   {{ end }}
 {{ end }}
+`)
