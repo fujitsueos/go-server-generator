@@ -4,7 +4,9 @@
 	"GodepVersion": "v79",
 	"Packages": [
 		"github.com/fujitsueos/go-server-generator",
-		"github.com/fujitsueos/go-server-generator/generate"
+		"github.com/fujitsueos/go-server-generator/cmd/generate",
+		"github.com/fujitsueos/go-server-generator/generate",
+		"github.com/fujitsueos/go-server-generator/templates"
 	],
 	"Deps": [
 		{
