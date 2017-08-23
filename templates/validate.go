@@ -1,4 +1,8 @@
-{{/* Input: { Type, ReadOnly } */}}
+package templates
+
+// Validate is a template for the validate file
+var Validate = parse("validate",
+	`{{/* Input: { Type, ReadOnly } */}}
 {{ define "validateType" -}}
 	// Validate validates a {{ .ReadOnly }}{{ .Type.Name }} based on the swagger spec
 	func (s *{{ .ReadOnly }}{{ .Type.Name }}) Validate() (errors []string) {
@@ -215,3 +219,4 @@ package model
 		}
 	{{ end -}}
 {{ end }}
+`)
