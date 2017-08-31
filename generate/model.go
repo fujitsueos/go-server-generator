@@ -157,6 +157,11 @@ func createTypeData(name, description string, schema spec.Schema) (t typeData, e
 			logger.Error(err)
 			return
 		}
+		if t.IsError && (t.Validation.hasValidation() || t.ItemValidation.hasValidation()) {
+			err = errors.New("Errors with validation rules are not suppored")
+			logger.Error(err)
+			return
+		}
 	} else if isSlice {
 		t.IsSlice = true
 		t.ItemType = goType
