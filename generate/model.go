@@ -21,6 +21,7 @@ type typeData struct {
 	Description      string
 	Validation       validation
 	HasReadOnlyProps bool
+	IsError          bool
 
 	// struct fields
 	IsStruct bool
@@ -54,14 +55,25 @@ type propsData struct {
 	Type string
 }
 
+type errorsData struct {
+	Types []typeData
+}
+
 // Model generates the model based on a definitions spec
-func Model(modelWriter io.Writer, validateWriter io.Writer, definitions spec.Definitions) (readOnlyTypes map[string]bool, err error) {
-	var model modelData
-	if model, readOnlyTypes, err = createModel(definitions); err != nil {
+func Model(modelWriter, validateWriter, errorsWriter io.Writer, definitions spec.Definitions) (readOnlyTypes map[string]bool, err error) {
+	var (
+		model  modelData
+		errors errorsData
+	)
+	if model, readOnlyTypes, errors, err = createModel(definitions); err != nil {
 		return
 	}
 
 	if err = templates.Model.Execute(modelWriter, model); err != nil {
+		return
+	}
+
+	if err = templates.Model.Execute(errorsWriter, errors); err != nil {
 		return
 	}
 
@@ -70,7 +82,7 @@ func Model(modelWriter io.Writer, validateWriter io.Writer, definitions spec.Def
 	return
 }
 
-func createModel(definitions spec.Definitions) (model modelData, readOnlyTypes map[string]bool, err error) {
+func createModel(definitions spec.Definitions) (model modelData, readOnlyTypes map[string]bool, errors errorsData, err error) {
 	originalLogger := logger
 
 	for name, definition := range definitions {
@@ -80,44 +92,16 @@ func createModel(definitions spec.Definitions) (model modelData, readOnlyTypes m
 
 		logger.Info("Generating model")
 
-		var (
-			goType       string
-			val, itemVal validation
-			isSlice      bool
-		)
-
-		if goType, val, itemVal, isSlice, err = getType(definition); err != nil {
+		var t typeData
+		if t, err = createTypeData(name, definition.Description, definition); err != nil {
 			return
 		}
 
-		logger = logger.WithField("type", goType)
-
-		t := typeData{
-			Name:        goFormat(name),
-			Description: definition.Description,
-			Validation:  val,
-		}
-
-		if goType == "struct" {
-			t.IsStruct = true
-
-			required := []string{}
-			if val.Object != nil {
-				required = val.Object.Required
-			}
-
-			if t.Props, t.HasReadOnlyProps, err = createObjectProps(definition, required); err != nil {
-				return
-			}
-		} else if isSlice {
-			t.IsSlice = true
-			t.ItemType = goType
-			t.ItemValidation = itemVal
+		if t.IsError {
+			errors.Types = append(errors.Types, t)
 		} else {
-			t.Type = goType
+			model.Types = append(model.Types, t)
 		}
-
-		model.Types = append(model.Types, t)
 	}
 
 	logger = originalLogger
@@ -126,7 +110,61 @@ func createModel(definitions spec.Definitions) (model modelData, readOnlyTypes m
 		return
 	}
 
-	sortModel(model)
+	sortTypes(model.Types)
+	sortTypes(errors.Types)
+
+	return
+}
+
+func createTypeData(name, description string, schema spec.Schema) (t typeData, err error) {
+	defer restoreLogger(logger)
+
+	var (
+		goType       string
+		val, itemVal validation
+		isSlice      bool
+	)
+
+	if goType, val, itemVal, isSlice, err = getType(schema); err != nil {
+		return
+	}
+
+	isError, _ := schema.Extensions.GetBool("x-error")
+
+	logger = logger.WithField("type", goType)
+
+	t = typeData{
+		Name:        goFormat(name),
+		Description: schema.Description,
+		Validation:  val,
+		IsError:     isError,
+	}
+
+	if goType == "struct" {
+		t.IsStruct = true
+
+		required := []string{}
+		if val.Object != nil {
+			required = val.Object.Required
+		}
+
+		if t.Props, t.HasReadOnlyProps, err = createObjectProps(schema, required); err != nil {
+			return
+		}
+
+		if t.IsError && t.HasReadOnlyProps {
+			err = errors.New("Errors with read-only props are not suppored")
+			logger.Error(err)
+			return
+		}
+	} else if isSlice {
+		t.IsSlice = true
+		t.ItemType = goType
+		t.ItemValidation = itemVal
+	} else {
+		t.Type = goType
+	}
+
 	return
 }
 
@@ -289,7 +327,7 @@ func getType(schema spec.Schema) (t string, val, itemVal validation, isSlice boo
 // properties and one with the rest. If we reference such an object from another object, we need
 // to also create two Go structs for that one. Not impossible, but it leads to annoying bookkeeping.
 //
-// For now we just forbid that case: an object with read-only properties cannot be refenced by
+// For now we just forbid that case: an object with read-only properties cannot be referenced by
 // another object. There is one exception: top-level arrays may reference objects with read-only
 // properties. This is the typical response for the GET /<resources> endpoint, so forbidding that
 // makes no sense.
@@ -380,10 +418,10 @@ func (a propByName) Len() int           { return len(a) }
 func (a propByName) Swap(i, j int)      { a[i], a[j] = a[j], a[i] }
 func (a propByName) Less(i, j int) bool { return a[i].Name < a[j].Name }
 
-func sortModel(model modelData) {
-	sort.Sort(typeByName(model.Types))
+func sortTypes(types []typeData) {
+	sort.Sort(typeByName(types))
 
-	for _, t := range model.Types {
+	for _, t := range types {
 		sort.Sort(propByName(t.Props))
 	}
 }

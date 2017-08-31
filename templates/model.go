@@ -1,12 +1,12 @@
 package templates
 
-// Model is a template for the model file
+// Model is a template for the model and errors file
 var Model = parse("model",
 	`{{/* Input: { Struct, ReadOnly } */ -}}
 {{ define "modelStruct" -}}
   // {{ .ReadOnly }}{{ .Struct.Name }}
-    {{- if .Struct.Description }} {{ .Struct.Description }}{{ else }} No description provided{{ end }}
-  type {{ .ReadOnly }}{{ .Struct.Name }} struct {
+  {{- if .Struct.Description }} {{ .Struct.Description }}{{ else }} No description provided{{ end }}
+    type {{ .ReadOnly }}{{ .Struct.Name }} struct {
     {{ if .ReadOnly -}}
       {{ .Struct.Name }}
     {{ end -}}
@@ -18,6 +18,38 @@ var Model = parse("model",
         {{ .Name }} {{ if .IsSlice }}[]{{ .ItemType }}{{ else }}*{{ .Type }}{{ end }} 'json:"{{ .JSONName }}" db:"{{ .JSONName }}"'
       {{ end -}}
     {{ end -}}
+  }
+
+  // New{{ .ReadOnly }}{{ .Struct.Name }} returns a new {{ .ReadOnly }}{{ .Struct.Name }}
+  func New{{ .ReadOnly }}{{ .Struct.Name }}(
+    {{- range .Struct.Props -}}
+      {{ if or (eq $.ReadOnly "ReadOnly") (not .IsReadOnly) -}}
+        {{ .JSONName }} {{ if .IsSlice }}[]{{ .ItemType }}{{ else }}{{ .Type }}{{ end }},
+      {{- end -}}
+    {{ end -}}
+  ) {{ .ReadOnly }}{{ .Struct.Name }} {
+    return {{ .ReadOnly }}{{ .Struct.Name }}{
+      {{ if eq $.ReadOnly "ReadOnly" -}}
+        New{{ .Struct.Name }}(
+          {{- range .Struct.Props -}}
+            {{ if not .IsReadOnly -}}
+              {{ .JSONName }},
+            {{- end -}}
+          {{ end -}}
+        ),
+        {{ range .Struct.Props -}}
+          {{ if .IsReadOnly -}}
+            {{ if not .IsSlice }}&{{ end }}{{ .JSONName }},
+          {{ end -}}
+        {{ end -}}
+      {{ else -}}
+        {{ range .Struct.Props -}}
+          {{ if not .IsReadOnly -}}
+            {{ if not .IsSlice }}&{{ end }}{{ .JSONName }},
+          {{ end -}}
+        {{ end -}}
+      {{ end -}}
+    }
   }
 {{ end -}}
 
@@ -46,6 +78,24 @@ package model
   {{ else -}}
     // {{ .Name }}{{ if .Description }} {{ .Description }}{{ else }} No description provided{{ end }}
     type {{ .Name }} {{ .Type }}
-  {{ end }}
+  {{ end -}}
+
+  {{ if .IsError -}}
+    func (e {{ .Name }}) Error() string {
+      {{ if or .IsStruct .IsSlice -}}
+        return spew.Sdump(struct{
+          {{ range .Props -}}
+            {{ .Name }} {{ if .IsSlice }}[]{{ .ItemType }}{{ else }}*{{ .Type }}{{ end }}
+          {{ end -}}
+        }{
+          {{- range .Props -}}
+            e.{{ .Name }},
+          {{- end -}}
+        })
+      {{ else -}}
+        return {{ .Type }}(e).Error()
+      {{ end -}}
+    }
+  {{ end -}}
 {{ end }}
 `)
