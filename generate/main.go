@@ -4,6 +4,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 
 	"github.com/go-openapi/loads"
 	"github.com/go-openapi/spec"
@@ -52,38 +53,33 @@ func readValidSwagger(swaggerPath string) (swagger *spec.Swagger, err error) {
 }
 
 func generateServer(path string, swagger *spec.Swagger) (err error) {
-	var (
-		modelFile, validateFile, routerFile                *os.File
-		modelPackage                                       string
-		closeModelFile, closeValidateFile, closeRouterFile func()
-	)
-
-	// create the model file
-	if modelFile, modelPackage, closeModelFile, err = createOutputFile(path, "generated/model/model.go"); err != nil {
-		return
+	paths := []string{
+		"generated/model/model.go",
+		"generated/model/validate.go",
+		"generated/model/errors.go",
+		"generated/router/router.go",
 	}
-	defer closeModelFile()
 
-	// create the validate file
-	if validateFile, _, closeValidateFile, err = createOutputFile(path, "generated/model/validate.go"); err != nil {
-		return
-	}
-	defer closeValidateFile()
+	files := map[string]*os.File{}
+	packages := map[string]string{}
 
-	// create the router file
-	if routerFile, _, closeRouterFile, err = createOutputFile(path, "generated/router/router.go"); err != nil {
-		return
+	for _, p := range paths {
+		name := strings.TrimSuffix(filepath.Base(p), filepath.Ext(p))
+		var closeFile func()
+		if files[name], packages[name], closeFile, err = createOutputFile(path, p); err != nil {
+			return
+		}
+		defer closeFile()
 	}
-	defer closeRouterFile()
 
 	// create the model and write to the model and validate files
 	var readOnlyTypes map[string]bool
-	if readOnlyTypes, err = Model(modelFile, validateFile, swagger.Definitions); err != nil {
+	if readOnlyTypes, err = Model(files["model"], files["validate"], files["errors"], swagger.Definitions); err != nil {
 		return
 	}
 
 	// create the router and write to the router file
-	err = Router(routerFile, swagger.Paths, readOnlyTypes, modelPackage)
+	err = Router(files["router"], swagger.Paths, readOnlyTypes, packages["model"])
 
 	return
 }
