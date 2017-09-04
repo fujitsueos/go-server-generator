@@ -159,14 +159,16 @@ func (m *middleware) {{ .Name }}(w http.ResponseWriter, r *http.Request, {{ if .
 		}
 	{{ end -}}
 
-	if len(errs) > 0 {
-		log.WithFields(log.Fields{
-			"handler": "{{ .Name }}",
-			"errs": strings.Join(errs, "\n"),
-		})
-		respondJSON(w, m.errorTransformer.ValidationErrorsTo{{ if .ValidationError }}{{ .ValidationError }}{{ else }}String{{ end }}(errs), "{{ if .ValidationError }}{{ .ValidationError }}{{ else }}string{{ end }}", http.StatusBadRequest, errorTransformer)
-		return
-	}
+	{{ if .HasValidation -}}
+		if len(errs) > 0 {
+			log.WithFields(log.Fields{
+				"handler": "{{ .Name }}",
+				"errs": strings.Join(errs, "\n"),
+			})
+			respondJSON(w, m.errorTransformer.ValidationErrorsTo{{ if .ValidationError }}{{ .ValidationError }}{{ else }}String{{ end }}(errs), "{{ if .ValidationError }}{{ .ValidationError }}{{ else }}string{{ end }}", http.StatusBadRequest, errorTransformer)
+			return
+		}
+	{{ end -}}
 
 	if {{ if .ResultType }}result, {{ end }}err = m.handler.{{ .HandlerName }}(
 		{{- range .Params -}}
@@ -206,7 +208,7 @@ func (m *middleware) {{ .Name }}(w http.ResponseWriter, r *http.Request, {{ if .
 {{ end -}}
 
 func respondJSON(w http.ResponseWriter, data interface{}, dataType string, statusCode int, errorTransformer func(error) interface{}) {
-	json, err := json.Marshal(data)
+	response, err := json.Marshal(data)
 	if err != nil {
 		log.WithFields(log.Fields{
 			"dataType": dataType,
@@ -215,13 +217,13 @@ func respondJSON(w http.ResponseWriter, data interface{}, dataType string, statu
 
 		// we need to assume here that converting the error does not lead to json marshalling errors
 		// it is the responsibility of the implementer to not mess this up
-		json, _ := json.Marshal(errorTransformer(err))
+		response, _ = json.Marshal(errorTransformer(err))
 		statusCode = http.StatusInternalServerError
 	}
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(statusCode)
-	w.Write(json)
+	w.Write(response)
 }
 
 func parseArray(s string) []string {
