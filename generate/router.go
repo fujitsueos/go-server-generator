@@ -14,8 +14,10 @@ import (
 )
 
 type routerData struct {
-	Routes       []routeData
-	ModelPackage string
+	Routes               []routeData
+	ModelPackage         string
+	BadRequestErrors     []string
+	InternalServerErrors []string
 }
 
 type routeData struct {
@@ -27,9 +29,15 @@ type routeData struct {
 	Params         []paramData
 	HasPathParams  bool
 	HasQueryParams bool
-	ResultType     string
-	ReadOnlyResult bool
-	Tag            string
+	HasValidation  bool
+
+	ResultType      string
+	ReadOnlyResult  bool
+	ResultErrors    []errorData
+	ValidationError *string
+	CatchAllError   *string
+
+	Tag string
 
 	// meta-properties for the template
 	NewBlock bool
@@ -51,6 +59,11 @@ type paramData struct {
 	IsArray        bool
 }
 
+type errorData struct {
+	Type       string
+	StatusCode int
+}
+
 // Router generates the model based on a definitions spec
 func Router(w io.Writer, paths *spec.Paths, readOnlyTypes map[string]bool, modelPackage string) (err error) {
 	var router routerData
@@ -65,48 +78,12 @@ func Router(w io.Writer, paths *spec.Paths, readOnlyTypes map[string]bool, model
 }
 
 func createRouter(paths *spec.Paths, readOnlyTypes map[string]bool) (router routerData, err error) {
-	var r routeData
+	if router, err = createRouterFromPaths(paths, readOnlyTypes); err != nil {
+		return
+	}
 
-	for path, pathItem := range paths.Paths {
-		logger = logger.WithField("path", path)
-
-		if pathItem.Get != nil {
-			if r, err = createRouteData(http.MethodGet, path, pathItem.Get, pathItem.Parameters, readOnlyTypes); err != nil {
-				return
-			}
-
-			router.Routes = append(router.Routes, r)
-		}
-
-		if pathItem.Post != nil {
-			if r, err = createRouteData(http.MethodPost, path, pathItem.Post, pathItem.Parameters, readOnlyTypes); err != nil {
-				return
-			}
-
-			router.Routes = append(router.Routes, r)
-		}
-
-		if pathItem.Put != nil {
-			if r, err = createRouteData(http.MethodPut, path, pathItem.Put, pathItem.Parameters, readOnlyTypes); err != nil {
-				return
-			}
-
-			router.Routes = append(router.Routes, r)
-		}
-
-		if pathItem.Delete != nil {
-			if r, err = createRouteData(http.MethodDelete, path, pathItem.Delete, pathItem.Parameters, readOnlyTypes); err != nil {
-				return
-			}
-
-			router.Routes = append(router.Routes, r)
-		}
-
-		if pathItem.Head != nil || pathItem.Options != nil || pathItem.Patch != nil {
-			err = errors.New("Unsupported opteration (HEAD/OPTIONS/PATCH)")
-			logger.Error(err)
-			return
-		}
+	if router.BadRequestErrors, router.InternalServerErrors, err = getErrorTypes(router.Routes); err != nil {
+		return
 	}
 
 	sortRouter(router)
@@ -120,6 +97,41 @@ func createRouter(paths *spec.Paths, readOnlyTypes map[string]bool) (router rout
 		}
 
 		prevTag = route.Tag
+	}
+
+	return
+}
+
+func createRouterFromPaths(paths *spec.Paths, readOnlyTypes map[string]bool) (router routerData, err error) {
+	defer restoreLogger(logger)
+
+	var r routeData
+
+	for path, pathItem := range paths.Paths {
+		logger = logger.WithField("path", path)
+
+		operations := map[string]*spec.Operation{
+			http.MethodGet:    pathItem.Get,
+			http.MethodPost:   pathItem.Post,
+			http.MethodPut:    pathItem.Put,
+			http.MethodDelete: pathItem.Delete,
+		}
+
+		for method, operation := range operations {
+			if operation != nil {
+				if r, err = createRouteData(method, path, operation, pathItem.Parameters, readOnlyTypes); err != nil {
+					return
+				}
+
+				router.Routes = append(router.Routes, r)
+			}
+		}
+
+		if pathItem.Head != nil || pathItem.Options != nil || pathItem.Patch != nil {
+			err = errors.New("Unsupported operation (HEAD/OPTIONS/PATCH)")
+			logger.Error(err)
+			return
+		}
 	}
 
 	return
@@ -140,57 +152,56 @@ func createRouteData(method, path string, operation *spec.Operation, routeParame
 		logger.Error(err)
 		return
 	}
-	tag := "Other"
-	if len(operation.Tags) == 1 {
-		tag = operation.Tags[0]
-	}
-
-	handlerName := goFormat(operation.ID)
-	name := lowerStart(handlerName)
 
 	paramMap := mergeParams(routeParameters, operation.Parameters)
-
 	if len(paramMap["formData"]) > 0 {
 		err = errors.New("formData parameters are not supported")
 		logger.Error(err)
 		return
 	}
 
-	var body *bodyData
-	if body, err = createBodyData(paramMap["body"]["body"]); err != nil {
-		return
-	}
-
-	var pathParams, queryParams, headerParams []paramData
-	if pathParams, err = createparamData("path", paramMap["path"]); err != nil {
-		return
-	}
-	if queryParams, err = createparamData("query", paramMap["query"]); err != nil {
-		return
-	}
-	if headerParams, err = createparamData("header", paramMap["header"]); err != nil {
-		return
-	}
-
-	var resultType string
-	var readOnlyResult bool
-	if resultType, readOnlyResult, err = createResultType(operation.Responses, readOnlyTypes); err != nil {
-		return
-	}
+	handlerName := goFormat(operation.ID)
 
 	r = routeData{
-		Method:         method,
-		Route:          formatParams(path),
-		Name:           name,
-		HandlerName:    handlerName,
-		Body:           body,
-		Params:         append(append(append([]paramData{}, pathParams...), headerParams...), queryParams...),
-		HasPathParams:  len(pathParams) > 0,
-		HasQueryParams: len(queryParams) > 0,
-		ResultType:     resultType,
-		ReadOnlyResult: readOnlyResult,
-		Tag:            tag,
+		Method:      method,
+		Route:       formatParams(path),
+		Name:        lowerStart(handlerName),
+		HandlerName: handlerName,
+		Tag:         "Other",
 	}
+
+	if len(operation.Tags) == 1 {
+		r.Tag = operation.Tags[0]
+	}
+
+	if r.Body, err = createBodyData(paramMap["body"]["body"]); err != nil {
+		return
+	}
+	r.HasValidation = r.Body != nil
+
+	for _, p := range []string{"path", "query", "header"} {
+		var (
+			params        []paramData
+			hasValidation bool
+		)
+		if params, hasValidation, err = createParamData(p, paramMap[p]); err != nil {
+			return
+		}
+
+		r.Params = append(r.Params, params...)
+		if p == "path" && len(params) > 0 {
+			r.HasPathParams = true
+		}
+		if p == "query" && len(params) > 0 {
+			r.HasQueryParams = true
+		}
+
+		r.HasValidation = (r.HasValidation || hasValidation)
+	}
+
+	r.ResultType, r.ReadOnlyResult, r.ResultErrors, err = createResultType(operation.Responses, readOnlyTypes)
+	r.ValidationError = getError(r.ResultErrors, http.StatusBadRequest)
+	r.CatchAllError = getError(r.ResultErrors, http.StatusInternalServerError)
 
 	return
 }
@@ -220,7 +231,7 @@ func createBodyData(bodyParam *spec.Parameter) (body *bodyData, err error) {
 	return
 }
 
-func createparamData(location string, params map[string]*spec.Parameter) (data []paramData, err error) {
+func createParamData(location string, params map[string]*spec.Parameter) (data []paramData, hasValidation bool, err error) {
 	defer restoreLogger(logger)
 
 	for _, param := range params {
@@ -254,6 +265,7 @@ func createparamData(location string, params map[string]*spec.Parameter) (data [
 
 			if param.Format == "date-time" {
 				pData.Type = "time.Time"
+				hasValidation = true
 
 				if err = checkUnsupportedParamValidation(param.CommonValidations, []string{}); err != nil {
 					return
@@ -266,6 +278,8 @@ func createparamData(location string, params map[string]*spec.Parameter) (data [
 				if err = checkUnsupportedParamValidation(param.CommonValidations, []string{"minLength", "maxLength", "enum"}); err != nil {
 					return
 				}
+
+				hasValidation = hasValidation || pData.Validation.String != nil
 			}
 		} else { // "array"
 			pData.IsArray = true
@@ -299,6 +313,8 @@ func createparamData(location string, params map[string]*spec.Parameter) (data [
 			if err = checkUnsupportedParamValidation(param.Items.CommonValidations, []string{"minLength", "maxLength", "enum"}); err != nil {
 				return
 			}
+
+			hasValidation = hasValidation || pData.Validation.String != nil || pData.ItemValidation != nil
 		}
 
 		data = append(data, pData)
@@ -307,10 +323,18 @@ func createparamData(location string, params map[string]*spec.Parameter) (data [
 	return
 }
 
-func createResultType(responses *spec.Responses, readOnlyTypes map[string]bool) (resultType string, readOnlyResult bool, err error) {
+func createResultType(responses *spec.Responses, readOnlyTypes map[string]bool) (resultType string, readOnlyResult bool, resultErrors []errorData, err error) {
 	defer restoreLogger(logger)
 
 	hasSuccessResponse := false
+	resultErrorTypes := map[string]struct{}{}
+
+	if responses.ResponsesProps.Default != nil {
+		err = errors.New("Default response is not supported, use explicit response codes")
+		logger.Error(err)
+		return
+	}
+
 	for code, response := range responses.ResponsesProps.StatusCodeResponses {
 		logger = logger.WithField("responseCode", code)
 
@@ -333,11 +357,28 @@ func createResultType(responses *spec.Responses, readOnlyTypes map[string]bool) 
 				}
 			}
 		} else {
-			if response.Schema != nil {
-				err = errors.New("Non-success responses with schemas are not supported")
-				logger.Error(err)
-				return
+			resultError := errorData{
+				StatusCode: code,
 			}
+
+			if response.Schema != nil {
+				if resultError.Type, err = getRefName(response.Schema.Ref); err != nil {
+					return
+				}
+
+				if _, exists := resultErrorTypes[resultError.Type]; exists {
+					// we do a switch on error type to determine the status code, so each type must be unique
+					err = errors.New("Cannot have multiple status codes with the same response type")
+					logger.Error(err)
+					return
+				}
+			} else {
+				resultError.Type = "string"
+			}
+
+			resultErrorTypes[resultError.Type] = struct{}{}
+
+			resultErrors = append(resultErrors, resultError)
 		}
 	}
 
@@ -439,6 +480,96 @@ func checkUnsupportedParamValidation(validations spec.CommonValidations, allowed
 	return
 }
 
+// collect all the error types that can be returned with status code 400 and 500 from all routes combined
+func getErrorTypes(routes []routeData) (validationErrors, catchAllErrors []string, err error) {
+	defer restoreLogger(logger)
+
+	validationErrorsSet := make(map[string]struct{})
+	catchAllErrorsSet := make(map[string]struct{})
+
+	hasRoutesWithValidation := false
+
+	for _, route := range routes {
+		validationError := getError(route.ResultErrors, http.StatusBadRequest)
+		catchAllError := getError(route.ResultErrors, http.StatusInternalServerError)
+
+		if route.HasValidation {
+			hasRoutesWithValidation = true
+			if validationError != nil {
+				validationErrorsSet[*validationError] = struct{}{}
+			}
+		}
+
+		if catchAllError != nil {
+			catchAllErrorsSet[*catchAllError] = struct{}{}
+		}
+	}
+
+	if len(validationErrorsSet) == 0 {
+		// if we have routes that need validation but none of them specifies the error type, it defaults to string
+		if hasRoutesWithValidation {
+			validationErrors = []string{"string"}
+		}
+	} else {
+		// if at least one route specifies the validation error type, all routes that have validation must
+		for _, route := range routes {
+			validationError := getError(route.ResultErrors, http.StatusBadRequest)
+
+			if route.HasValidation && validationError == nil {
+				err = errors.New("Not all routes that can have validation errors define an error type")
+				logger.WithFields(log.Fields{
+					"method": route.Method,
+					"route":  route.Route,
+				}).Error(err)
+				return
+			}
+		}
+
+		validationErrors = stringSetToList(validationErrorsSet)
+	}
+
+	if len(catchAllErrorsSet) == 0 {
+		// if none of the routes specifies the catch-all error type it defaults to string
+		catchAllErrors = []string{"string"}
+	} else {
+		// if at least one route specifies the catch-all error type, all of them must
+		for _, route := range routes {
+			if getError(route.ResultErrors, http.StatusInternalServerError) == nil {
+				err = errors.New("Not all routes define a standard error type")
+				logger.WithFields(log.Fields{
+					"method": route.Method,
+					"route":  route.Route,
+				}).Error(err)
+				return
+			}
+		}
+
+		catchAllErrors = stringSetToList(catchAllErrorsSet)
+	}
+
+	return
+}
+
+func getError(errors []errorData, statusCode int) *string {
+	for _, e := range errors {
+		if e.StatusCode == statusCode {
+			return &e.Type
+		}
+	}
+	return nil
+}
+
+func stringSetToList(set map[string]struct{}) []string {
+	result := make([]string, len(set), len(set))
+	i := 0
+	for s := range set {
+		result[i] = s
+		i++
+	}
+	return result
+}
+
+// match text between {}, which is the swagger notation for path parameters
 var paramRegex = regexp.MustCompile("{([^}]*)}")
 
 func formatParams(path string) string {
@@ -490,6 +621,7 @@ func lowerStart(s string) string {
 
 type routeByRoute []routeData
 type paramByLocationAndName []paramData
+type errorDataByStatusCode []errorData
 
 var methodOrder = map[string]int{
 	"GET":    0,
@@ -528,10 +660,20 @@ func (a paramByLocationAndName) Less(i, j int) bool {
 	return a[i].Name < a[j].Name
 }
 
+func (a errorDataByStatusCode) Len() int      { return len(a) }
+func (a errorDataByStatusCode) Swap(i, j int) { a[i], a[j] = a[j], a[i] }
+func (a errorDataByStatusCode) Less(i, j int) bool {
+	return a[i].StatusCode < a[j].StatusCode
+}
+
 func sortRouter(router routerData) {
 	sort.Sort(routeByRoute(router.Routes))
 
 	for _, r := range router.Routes {
 		sort.Sort(paramByLocationAndName(r.Params))
+		sort.Sort(errorDataByStatusCode(r.ResultErrors))
 	}
+
+	sort.Strings(router.BadRequestErrors)
+	sort.Strings(router.InternalServerErrors)
 }

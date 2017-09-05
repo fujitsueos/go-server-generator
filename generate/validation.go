@@ -188,7 +188,7 @@ func getValidationForType(t string, isSlice bool, schema spec.Schema) (val valid
 				Required: schema.Required,
 			}
 		}
-		err = checkUnsupportedFields(t, schema, []string{"properties", "readOnly", "required"})
+		err = checkUnsupportedFields(t, schema, []string{"properties", "readOnly", "required", "extensions"})
 	default:
 		err = errors.New("Unknown type")
 		logger.Error(err)
