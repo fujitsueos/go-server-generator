@@ -78,6 +78,33 @@ func Router(w io.Writer, paths *spec.Paths, readOnlyTypes map[string]bool, model
 }
 
 func createRouter(paths *spec.Paths, readOnlyTypes map[string]bool) (router routerData, err error) {
+	if router, err = createRouterFromPaths(paths, readOnlyTypes); err != nil {
+		return
+	}
+
+	if router.BadRequestErrors, router.InternalServerErrors, err = getErrorTypes(router.Routes); err != nil {
+		return
+	}
+
+	sortRouter(router)
+
+	prevTag := ""
+	for i := range router.Routes {
+		route := &router.Routes[i]
+
+		if route.Tag != prevTag {
+			route.NewBlock = true
+		}
+
+		prevTag = route.Tag
+	}
+
+	return
+}
+
+func createRouterFromPaths(paths *spec.Paths, readOnlyTypes map[string]bool) (router routerData, err error) {
+	defer restoreLogger(logger)
+
 	var r routeData
 
 	for path, pathItem := range paths.Paths {
@@ -105,21 +132,6 @@ func createRouter(paths *spec.Paths, readOnlyTypes map[string]bool) (router rout
 			logger.Error(err)
 			return
 		}
-	}
-
-	router.BadRequestErrors, router.InternalServerErrors = getErrorTypes(router.Routes)
-
-	sortRouter(router)
-
-	prevTag := ""
-	for i := range router.Routes {
-		route := &router.Routes[i]
-
-		if route.Tag != prevTag {
-			route.NewBlock = true
-		}
-
-		prevTag = route.Tag
 	}
 
 	return
@@ -469,33 +481,71 @@ func checkUnsupportedParamValidation(validations spec.CommonValidations, allowed
 }
 
 // collect all the error types that can be returned with status code 400 and 500 from all routes combined
-func getErrorTypes(routes []routeData) (validationErrors, catchAllErrors []string) {
+func getErrorTypes(routes []routeData) (validationErrors, catchAllErrors []string, err error) {
+	defer restoreLogger(logger)
+
 	validationErrorsSet := make(map[string]struct{})
 	catchAllErrorsSet := make(map[string]struct{})
+
+	hasRoutesWithValidation := false
 
 	for _, route := range routes {
 		validationError := getError(route.ResultErrors, http.StatusBadRequest)
 		catchAllError := getError(route.ResultErrors, http.StatusInternalServerError)
 
 		if route.HasValidation {
-			if validationError == nil {
-				validationErrorsSet["string"] = struct{}{}
-			} else {
+			hasRoutesWithValidation = true
+			if validationError != nil {
 				validationErrorsSet[*validationError] = struct{}{}
 			}
-		} else if validationError != nil {
-			logger.WithField("Route", route.Name).Warn("Spec contains a BadRequest response but there is no input validation")
 		}
 
-		if catchAllError == nil {
-			catchAllErrorsSet["string"] = struct{}{}
-		} else {
+		if catchAllError != nil {
 			catchAllErrorsSet[*catchAllError] = struct{}{}
 		}
 	}
 
-	validationErrors = stringSetToList(validationErrorsSet)
-	catchAllErrors = stringSetToList(catchAllErrorsSet)
+	if len(validationErrorsSet) == 0 {
+		// if we have routes that need validation but none of them specifies the error type, it defaults to string
+		if hasRoutesWithValidation {
+			validationErrors = []string{"string"}
+		}
+	} else {
+		// if at least one route specifies the validation error type, all routes that have validation must
+		for _, route := range routes {
+			validationError := getError(route.ResultErrors, http.StatusBadRequest)
+
+			if route.HasValidation && validationError == nil {
+				err = errors.New("Not all routes that can have validation errors define an error type")
+				logger.WithFields(log.Fields{
+					"method": route.Method,
+					"route":  route.Route,
+				}).Error(err)
+				return
+			}
+		}
+
+		validationErrors = stringSetToList(validationErrorsSet)
+	}
+
+	if len(catchAllErrorsSet) == 0 {
+		// if none of the routes specifies the catch-all error type it defaults to string
+		catchAllErrors = []string{"string"}
+	} else {
+		// if at least one route specifies the catch-all error type, all of them must
+		for _, route := range routes {
+			if getError(route.ResultErrors, http.StatusInternalServerError) == nil {
+				err = errors.New("Not all routes define a standard error type")
+				logger.WithFields(log.Fields{
+					"method": route.Method,
+					"route":  route.Route,
+				}).Error(err)
+				return
+			}
+		}
+
+		catchAllErrors = stringSetToList(catchAllErrorsSet)
+	}
 
 	return
 }
