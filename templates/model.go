@@ -20,43 +20,57 @@ var Model = parse("model",
     {{ end -}}
   }
 
-  // New{{ .ReadOnly }}{{ .Struct.Name }} returns a new {{ .ReadOnly }}{{ .Struct.Name }}
-  func New{{ .ReadOnly }}{{ .Struct.Name }}(
-    {{- range .Struct.Props -}}
-      {{ if or (eq $.ReadOnly "ReadOnly") (not .IsReadOnly) -}}
-        {{ .JSONName }} {{ if .IsSlice }}[]{{ .ItemType }}{{ else }}{{ .Type }}{{ end }},
-      {{- end -}}
-    {{ end -}}
-  ) {{ .ReadOnly }}{{ .Struct.Name }} {
-    return {{ .ReadOnly }}{{ .Struct.Name }}{
-      {{ if eq $.ReadOnly "ReadOnly" -}}
-        New{{ .Struct.Name }}(
-          {{- range .Struct.Props -}}
-            {{ if not .IsReadOnly -}}
-              {{ .JSONName }},
-            {{- end -}}
-          {{ end -}}
-        ),
-        {{ range .Struct.Props -}}
-          {{ if .IsReadOnly -}}
-            {{ if not .IsSlice }}&{{ end }}{{ .JSONName }},
-          {{ end -}}
-        {{ end -}}
-      {{ else -}}
-        {{ range .Struct.Props -}}
-          {{ if not .IsReadOnly -}}
-            {{ if not .IsSlice }}&{{ end }}{{ .JSONName }},
-          {{ end -}}
-        {{ end -}}
-      {{ end -}}
-    }
-  }
+  {{/* Note that (and .ReadOnly .Struct.Name) means (if .ReadOnly == "" then "" else .Struct.Name) */}}
+  {{ template "constructor" dict "Name" (printf "%s%s" .ReadOnly .Struct.Name) "NonReadOnlyName" (and .ReadOnly .Struct.Name) "Props" .Struct.Props }}
 {{ end -}}
 
 {{/* Input: { Slice, ReadOnly } */ -}}
 {{ define "modelSlice" }}
   // {{ .ReadOnly }}{{ .Slice.Name }}{{ if .Slice.Description }} {{ .Slice.Description }}{{ else }} No description provided{{ end }}
   type {{ .ReadOnly }}{{ .Slice.Name }} []{{ .ReadOnly }}{{ .Slice.ItemType }}
+{{ end -}}
+
+{{/* Input: { Name, NonReadOnlyName, ReferenceName, Props } */ -}}
+{{ define "constructor" }}
+  // New{{ .Name }} returns a new {{ .Name }}
+  func New{{ .Name }}(
+    {{- range .Props -}}
+      {{ if or $.NonReadOnlyName (not .IsReadOnly) -}}
+        {{ .JSONName }} {{ if .IsSlice }}[]{{ .ItemType }}{{ else }}{{ .Type }}{{ end }},
+      {{- end -}}
+    {{ end -}}
+  ) {{ .Name }} {
+    {{ if .ReferenceName -}}
+      return {{ .Name }}(New{{ .ReferenceName }}(
+        {{- range .Props -}}
+          {{ .JSONName }},
+        {{- end -}}
+      ))
+    {{ else -}}
+      return {{ .Name }}{
+        {{ if $.NonReadOnlyName -}}
+          New{{ .NonReadOnlyName }}(
+            {{- range .Props -}}
+              {{ if not .IsReadOnly -}}
+                {{ .JSONName }},
+              {{- end -}}
+            {{ end -}}
+          ),
+          {{ range .Props -}}
+            {{ if .IsReadOnly -}}
+              {{ if not .IsSlice }}&{{ end }}{{ .JSONName }},
+            {{ end -}}
+          {{ end -}}
+        {{ else -}}
+          {{ range .Props -}}
+            {{ if not .IsReadOnly -}}
+              {{ if not .IsSlice }}&{{ end }}{{ .JSONName }},
+            {{ end -}}
+          {{ end -}}
+        {{ end -}}
+      }
+    {{ end -}}
+  }
 {{ end -}}
 
 package model
@@ -78,6 +92,10 @@ package model
   {{ else -}}
     // {{ .Name }}{{ if .Description }} {{ .Description }}{{ else }} No description provided{{ end }}
     type {{ .Name }} {{ .Type }}
+
+    {{ if .Ref -}}
+      {{ template "constructor" dict "Name" .Name "ReferenceName" .Ref.Name "Props" .Ref.Props }}
+    {{ end -}}
   {{ end -}}
 
   {{ if .IsError -}}
