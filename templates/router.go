@@ -186,6 +186,7 @@ func (m *middleware) {{ .Name }}(w http.ResponseWriter, r *http.Request, {{ if .
 		default:
 			{{ template "unexpectedError" .CatchAllError -}}
 		}
+		return
 	}
 
 	{{ if .ResultType -}}
