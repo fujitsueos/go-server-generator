@@ -32,8 +32,9 @@ type typeData struct {
 	ItemType       string
 	ItemValidation validation
 
-	// primitive type fields
+	// primitive type and reference fields
 	Type string
+	Ref  *typeData
 }
 
 type propsData struct {
@@ -109,6 +110,8 @@ func createModel(definitions spec.Definitions) (model modelData, readOnlyTypes m
 	if readOnlyTypes, err = checkReadOnlyTypes(&model); err != nil {
 		return
 	}
+
+	linkReferences(model.Types, errors.Types)
 
 	sortTypes(model.Types)
 	sortTypes(errors.Types)
@@ -410,6 +413,24 @@ func getDependencies(t *typeData) (dependencies []string) {
 	}
 
 	return
+}
+
+func linkReferences(types ...[]typeData) {
+	allTypes := make(map[string]typeData)
+
+	for _, ts := range types {
+		for _, t := range ts {
+			allTypes[t.Name] = t
+		}
+	}
+
+	for _, ts := range types {
+		for i := range ts {
+			if refType, ok := allTypes[ts[i].Type]; ok {
+				ts[i].Ref = &refType
+			}
+		}
+	}
 }
 
 type typeByName []typeData
