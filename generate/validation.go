@@ -60,6 +60,8 @@ type stringValidation struct {
 	MaxLength     int64
 	HasMinLength  bool
 	MinLength     int64
+	HasPattern    bool
+	Pattern       string
 }
 
 func getValidationForType(t string, isSlice bool, schema spec.Schema) (val validation, err error) {
@@ -177,7 +179,12 @@ func getValidationForType(t string, isSlice bool, schema spec.Schema) (val valid
 			stringVal.MaxLength = *schema.MaxLength
 			val.String = stringVal
 		}
-		err = checkUnsupportedFields(t, schema, []string{"enum", "format", "minLength", "maxLength", "readOnly"})
+		if schema.Pattern != "" {
+			stringVal.HasPattern = true
+			stringVal.Pattern = schema.Pattern
+			val.String = stringVal
+		}
+		err = checkUnsupportedFields(t, schema, []string{"enum", "format", "minLength", "maxLength", "readOnly", "pattern"})
 	case "bool":
 		err = checkUnsupportedFields(t, schema, []string{"readOnly"})
 	case "time.Time":
