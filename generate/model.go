@@ -12,7 +12,8 @@ import (
 )
 
 type modelData struct {
-	Types []typeData
+	Types    []typeData
+	Patterns []patternData
 }
 
 type typeData struct {
@@ -58,6 +59,11 @@ type propsData struct {
 
 type errorsData struct {
 	Types []typeData
+}
+
+type patternData struct {
+	Name    string
+	Pattern string
 }
 
 // Model generates the model based on a definitions spec
@@ -115,6 +121,8 @@ func createModel(definitions spec.Definitions) (model modelData, readOnlyTypes m
 
 	sortTypes(model.Types)
 	sortTypes(errors.Types)
+
+	listPatterns(&model)
 
 	return
 }
@@ -428,6 +436,37 @@ func linkReferences(types ...[]typeData) {
 		for i := range ts {
 			if refType, ok := allTypes[ts[i].Type]; ok {
 				ts[i].Ref = &refType
+			}
+		}
+	}
+}
+
+func listPatterns(model *modelData) {
+	for _, t := range model.Types {
+		var stringValidation *stringValidation
+
+		if t.Type == "string" {
+			stringValidation = t.Validation.String
+		}
+		if t.IsSlice && t.ItemType == "string" {
+			stringValidation = t.ItemValidation.String
+		}
+
+		if stringValidation != nil && stringValidation.HasPattern {
+			model.Patterns = append(model.Patterns, patternData{t.Name, stringValidation.Pattern})
+		}
+
+		for _, p := range t.Props {
+			stringValidation = nil
+			if p.Type == "string" {
+				stringValidation = p.Validation.String
+			}
+			if p.IsSlice && p.ItemType == "string" {
+				stringValidation = p.ItemValidation.String
+			}
+
+			if stringValidation != nil && stringValidation.HasPattern {
+				model.Patterns = append(model.Patterns, patternData{t.Name + p.Name, stringValidation.Pattern})
 			}
 		}
 	}
