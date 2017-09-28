@@ -184,7 +184,7 @@ func getValidationForType(t string, isSlice bool, schema spec.Schema) (val valid
 			stringVal.Pattern = schema.Pattern
 			val.String = stringVal
 		}
-		err = checkUnsupportedFields(t, schema, []string{"enum", "format", "minLength", "maxLength", "readOnly", "pattern"})
+		err = checkUnsupportedFields(t, schema, []string{"enum", "format", "minLength", "maxLength", "readOnly", "pattern", "extensions"})
 	case "bool":
 		err = checkUnsupportedFields(t, schema, []string{"readOnly"})
 	case "time.Time":
