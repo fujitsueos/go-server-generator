@@ -110,6 +110,8 @@ package model
             e.{{ .Name }},
           {{- end -}}
         })
+      {{ else if eq .Type "string" -}}
+        return string(e)
       {{ else -}}
         return {{ .Type }}(e).Error()
       {{ end -}}
