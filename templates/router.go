@@ -222,6 +222,11 @@ func respondJSON(w http.ResponseWriter, data interface{}, dataType string, statu
 		statusCode = http.StatusInternalServerError
 	}
 
+	// prevent caching
+	w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate") // HTTP 1.1.
+	w.Header().Set("Pragma", "no-cache") // HTTP 1.0.
+	w.Header().Set("Expires", "0") // Proxies.
+
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(statusCode)
 	w.Write(response)
