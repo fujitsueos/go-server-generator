@@ -159,16 +159,16 @@ func (m *middleware) {{ .Name }}(w http.ResponseWriter, r *http.Request, {{ if .
 		}
 	{{ end -}}
 
-	{{ if .HasValidation -}}
-		if len(errs) > 0 {
-			log.WithFields(log.Fields{
-				"handler": "{{ .Name }}",
-				"errs": strings.Join(errs, "\n"),
-			})
+	if len(errs) > 0 {
+		log.WithFields(log.Fields{
+			"handler": "{{ .Name }}",
+			"errs": strings.Join(errs, "\n"),
+		})
+		{{ if .HasValidation -}}
 			respondJSON(w, m.errorTransformer.ValidationErrorsTo{{ if .ValidationError }}{{ .ValidationError }}{{ else }}String{{ end }}(errs), "{{ if .ValidationError }}{{ .ValidationError }}{{ else }}string{{ end }}", http.StatusBadRequest, errorTransformer)
 			return
+		{{ end -}}
 		}
-	{{ end -}}
 
 	if {{ if .ResultType }}result, {{ end }}err = m.handler.{{ .HandlerName }}(
 		{{- range .Params -}}
