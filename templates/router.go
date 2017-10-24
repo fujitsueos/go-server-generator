@@ -100,7 +100,9 @@ func (m *middleware) {{ .Name }}(w http.ResponseWriter, r *http.Request, {{ if .
 			result model.{{ if .ReadOnlyResult }}ReadOnly{{ end }}{{ .ResultType }}
 		{{ end -}}
 		err error
-		errs []string
+		{{ if or .ResultType .HasValidation -}}
+			errs []string
+		{{ end -}}
 	)
 
 	{{ if .HasQueryParams -}}
