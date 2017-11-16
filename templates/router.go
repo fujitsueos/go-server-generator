@@ -23,13 +23,14 @@ package router
 // Manual changes will be overwritten
 
 import (
-"encoding/json"
-"net/http"
+	"context"
+	"encoding/json"
+	"net/http"
 
-"github.com/julienschmidt/httprouter"
-log "github.com/sirupsen/logrus"
+	"github.com/julienschmidt/httprouter"
+	log "github.com/sirupsen/logrus"
 
-"{{ .ModelPackage }}"
+	"{{ .ModelPackage }}"
 )
 
 // Handler implements the actual functionality of the service
@@ -38,7 +39,7 @@ type Handler interface {
 	{{ if .NewBlock -}}
 		// {{ .Tag }}
 	{{ end -}}
-	{{ .HandlerName }}(
+	{{ .HandlerName }}(ctx context.Context,
 		{{- range .Params -}}
 			{{ .Name }} {{ if .IsArray }}[]{{ end }}{{ .Type }},
 		{{- end -}}
@@ -172,7 +173,7 @@ func (m *middleware) {{ .Name }}(w http.ResponseWriter, r *http.Request, {{ if .
 		}
 	{{ end -}}
 
-	if {{ if .ResultType }}result, {{ end }}err = m.handler.{{ .HandlerName }}(
+	if {{ if .ResultType }}result, {{ end }}err = m.handler.{{ .HandlerName }}(r.Context(),
 		{{- range .Params -}}
 			{{ .Name }},
 		{{- end -}}
