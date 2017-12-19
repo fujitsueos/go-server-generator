@@ -60,19 +60,24 @@ type ErrorTransformer interface {
 	{{ range .InternalServerErrors -}}
 		ErrorTo{{ if eq "string" . }}String{{ else }}{{ . }}{{ end }}(err error) {{ if eq "string" . }}string{{ else }}model.{{ . }}{{ end }}
 	{{ end -}}
+}
 
+type PanicReporter interface {
+	Report(p interface{})
 }
 
 type middleware struct {
 	handler Handler
 	errorTransformer ErrorTransformer
+	panicReporter PanicReporter
 }
 
 // NewServer creates a http handler with a router for all methods of the service
-func NewServer(handler Handler, errorTransformer ErrorTransformer) http.Handler {
+func NewServer(handler Handler, errorTransformer ErrorTransformer, panicReporter PanicReporter) http.Handler {
 	m := &middleware{
 		handler,
 		errorTransformer,
+		panicReporter,
 	}
 
 	router := httprouter.New()
@@ -90,6 +95,7 @@ func (m *middleware) {{ .Name }}(w http.ResponseWriter, r *http.Request, {{ if .
 
 	defer func() {
 		if recovered := recover(); recovered != nil {
+			m.panicReporter.Report(recovered)
 			err := errors.New("Recovered")
 			log.WithField("error", recovered).Error(err)
 			{{ template "unexpectedError" .CatchAllError -}}
