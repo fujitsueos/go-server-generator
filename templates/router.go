@@ -62,22 +62,24 @@ type ErrorTransformer interface {
 	{{ end -}}
 }
 
-type PanicReporter interface {
-	Report(p interface{})
-}
+type ReportPanic func(p interface{})
 
 type middleware struct {
 	handler Handler
 	errorTransformer ErrorTransformer
-	panicReporter PanicReporter
+	reportPanic ReportPanic
 }
 
 // NewServer creates a http handler with a router for all methods of the service
-func NewServer(handler Handler, errorTransformer ErrorTransformer, panicReporter PanicReporter) http.Handler {
+func NewServer(handler Handler, errorTransformer ErrorTransformer, reportPanic ReportPanic) http.Handler {
+	if reportPanic == nil {
+		reportPanic = func(p interface{}) {}
+	}
+
 	m := &middleware{
 		handler,
 		errorTransformer,
-		panicReporter,
+		reportPanic,
 	}
 
 	router := httprouter.New()
@@ -95,7 +97,7 @@ func (m *middleware) {{ .Name }}(w http.ResponseWriter, r *http.Request, {{ if .
 
 	defer func() {
 		if recovered := recover(); recovered != nil {
-			m.panicReporter.Report(recovered)
+			m.reportPanic(recovered)
 			err := errors.New("Recovered")
 			log.WithField("error", recovered).Error(err)
 			{{ template "unexpectedError" .CatchAllError -}}
