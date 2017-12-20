@@ -46,9 +46,11 @@ type Handler interface {
 		{{- if .Body -}}
 			{{ .Body.Name }} model.{{ .Body.Type }}
 		{{- end -}}
-	) ({{ if .ResultType -}}
-		model.{{ if .ReadOnlyResult }}ReadOnly{{ end }}{{ .ResultType }},
-	{{- end }}error)
+	) (
+		{{- if .ResultType -}}
+			model.{{ if .ReadOnlyResult }}ReadOnly{{ end }}{{ .ResultType }},
+		{{- end -}}
+		model.{{ .HandlerName }}Error)
 {{ end }}
 }
 
@@ -179,24 +181,20 @@ func (m *middleware) {{ .Name }}(w http.ResponseWriter, r *http.Request, {{ if .
 			respondJSON(w, m.errorTransformer.ValidationErrorsTo{{ if .ValidationError }}{{ .ValidationError }}{{ else }}String{{ end }}(errs), "{{ if .ValidationError }}{{ .ValidationError }}{{ else }}string{{ end }}", http.StatusBadRequest, errorTransformer)
 			return
 		}
+
 	{{ end -}}
 
-	if {{ if .ResultType }}result, {{ end }}err = m.handler.{{ .HandlerName }}(r.Context(),
+	var handlerError model.{{ .HandlerName }}Error
+	if {{ if .ResultType }}result, {{ end }}handlerError = m.handler.{{ .HandlerName }}(r.Context(),
 		{{- range .Params -}}
 			{{ .Name }},
 		{{- end -}}
 		{{- if .Body -}}
 			{{ .Body.Name }}
 		{{- end -}}
-	); err != nil {
-		switch err.(type) {
-			{{ range .ResultErrors -}}
-				case model.{{ .Type }}:
-					respondJSON(w, err, "{{ .Type }}", {{ .StatusCode }}, errorTransformer)
-			{{ end -}}
-		default:
-			{{ template "unexpectedError" .CatchAllError -}}
-		}
+	); handlerError != nil {
+		errorType, statusCode := handlerError.{{ .HandlerName }}StatusCode()
+		respondJSON(w, err, errorType, statusCode, errorTransformer)
 		return
 	}
 
