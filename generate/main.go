@@ -57,6 +57,7 @@ func generateServer(path string, swagger *spec.Swagger) (err error) {
 		"generated/model/model.go",
 		"generated/model/validate.go",
 		"generated/model/errors.go",
+		"generated/model/routeerrors.go",
 		"generated/router/router.go",
 	}
 
@@ -79,7 +80,7 @@ func generateServer(path string, swagger *spec.Swagger) (err error) {
 	}
 
 	// create the router and write to the router file
-	err = Router(files["router"], swagger.Paths, readOnlyTypes, packages["model"])
+	err = Router(files["router"], files["routeerrors"], swagger.Paths, readOnlyTypes, packages["model"])
 
 	return
 }

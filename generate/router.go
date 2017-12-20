@@ -65,7 +65,7 @@ type errorData struct {
 }
 
 // Router generates the model based on a definitions spec
-func Router(w io.Writer, paths *spec.Paths, readOnlyTypes map[string]bool, modelPackage string) (err error) {
+func Router(routerWriter, routeErrorsWriter io.Writer, paths *spec.Paths, readOnlyTypes map[string]bool, modelPackage string) (err error) {
 	var router routerData
 	if router, err = createRouter(paths, readOnlyTypes); err != nil {
 		return
@@ -73,7 +73,10 @@ func Router(w io.Writer, paths *spec.Paths, readOnlyTypes map[string]bool, model
 
 	router.ModelPackage = modelPackage
 
-	err = templates.Router.Execute(w, router)
+	if err = templates.Router.Execute(routerWriter, router); err != nil {
+		return
+	}
+	err = templates.RouteErrors.Execute(routeErrorsWriter, router)
 	return
 }
 
