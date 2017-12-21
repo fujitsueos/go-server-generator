@@ -9,16 +9,18 @@ package model
 
 {{ range .Routes -}}
 	{{ $route := . -}}
+	// {{ .HandlerName }}Error is implemented by:
+	{{ range .ResultErrors -}}
+		// | {{ .StatusCode }}: {{ .Type }}
+	{{ end -}}
 	type {{ .HandlerName }}Error interface {
 		{{ .Name }}Error() {{ .Name }}Error
 		{{ .HandlerName }}StatusCode() (t string, statusCode int)
 	}
 
-	// private type to ensure {{ .HandlerName }}Error cannot be implemented outside this package
 	type {{ .Name }}Error byte
 
 	{{ range .ResultErrors -}}
-		// make sure {{ .Type }} implements {{ $route.HandlerName }}Error
 		func (e *{{ .Type }}) {{ $route.Name }}Error() {{ $route.Name }}Error {
 			return {{ $route.Name }}Error(0)
 		}
