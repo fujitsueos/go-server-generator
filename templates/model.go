@@ -21,7 +21,7 @@ var Model = parse("model",
   }
 
   {{/* Note that (and .ReadOnly .Struct.Name) means (if .ReadOnly == "" then "" else .Struct.Name) */}}
-  {{ template "constructor" dict "Name" (printf "%s%s" .ReadOnly .Struct.Name) "NonReadOnlyName" (and .ReadOnly .Struct.Name) "Props" .Struct.Props }}
+  {{ template "constructor" dict "Name" (printf "%s%s" .ReadOnly .Struct.Name) "NonReadOnlyName" (and .ReadOnly .Struct.Name) "Props" .Struct.Props "IsPointer" .Struct.IsError }}
 {{ end -}}
 
 {{/* Input: { Slice, ReadOnly } */ -}}
@@ -30,24 +30,24 @@ var Model = parse("model",
   type {{ .ReadOnly }}{{ .Slice.Name }} []{{ .ReadOnly }}{{ .Slice.ItemType }}
 {{ end -}}
 
-{{/* Input: { Name, NonReadOnlyName, ReferenceName, Props } */ -}}
+{{/* Input: { Name, NonReadOnlyName, ReferenceName, Props, IsPointer } */ -}}
 {{ define "constructor" }}
-  // New{{ .Name }} returns a new {{ .Name }}
+  // New{{ .Name }} returns a new {{ if .IsPointer}}*{{ end }}{{ .Name }}
   func New{{ .Name }}(
     {{- range .Props -}}
       {{ if or $.NonReadOnlyName (not .IsReadOnly) -}}
         {{ .JSONName }} {{ if .IsSlice }}[]{{ .ItemType }}{{ else }}{{ .Type }}{{ end }},
       {{- end -}}
     {{ end -}}
-  ) {{ .Name }} {
+  ) {{ if .IsPointer}}*{{ end }}{{ .Name }} {
     {{ if .ReferenceName -}}
-      return {{ .Name }}(New{{ .ReferenceName }}(
+      return {{ if .IsPointer}}(*{{ end }}{{ .Name }}{{ if .IsPointer}}){{ end }}(New{{ .ReferenceName }}(
         {{- range .Props -}}
           {{ .JSONName }},
         {{- end -}}
       ))
     {{ else -}}
-      return {{ .Name }}{
+      return {{ if .IsPointer }}&{{ end }}{{ .Name }}{
         {{ if $.NonReadOnlyName -}}
           New{{ .NonReadOnlyName }}(
             {{- range .Props -}}
@@ -94,7 +94,7 @@ package model
     type {{ .Name }} {{ .Type }}
 
     {{ if .Ref -}}
-      {{ template "constructor" dict "Name" .Name "ReferenceName" .Ref.Name "Props" .Ref.Props }}
+      {{ template "constructor" dict "Name" .Name "ReferenceName" .Ref.Name "Props" .Ref.Props "IsPointer" .IsError }}
     {{ end -}}
   {{ end -}}
 

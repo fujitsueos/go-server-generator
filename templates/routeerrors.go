@@ -19,11 +19,11 @@ package model
 
 	{{ range .ResultErrors -}}
 		// make sure {{ .Type }} implements {{ $route.HandlerName }}Error
-		func (e {{ .Type }}) {{ $route.Name }}Error() {{ $route.Name }}Error {
+		func (e *{{ .Type }}) {{ $route.Name }}Error() {{ $route.Name }}Error {
 			return {{ $route.Name }}Error(0)
 		}
 
-		func (e {{ .Type }}) {{ $route.HandlerName }}StatusCode() (t string, statusCode int) {
+		func (e *{{ .Type }}) {{ $route.HandlerName }}StatusCode() (t string, statusCode int) {
 			return "{{ .Type }}", {{ .StatusCode }}
 		}
 	{{ end -}}
