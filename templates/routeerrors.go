@@ -8,25 +8,34 @@ package model
 // Manual changes will be overwritten
 
 {{ range .Routes -}}
-	{{ $route := . -}}
 	// {{ .HandlerName }}Error is implemented by:
 	{{ range .ResultErrors -}}
 		// | {{ .StatusCode }}: {{ .Type }}
 	{{ end -}}
 	type {{ .HandlerName }}Error interface {
-		{{ .Name }}Error() {{ .Name }}Error
+		{{ .Name }}()
 		{{ .HandlerName }}StatusCode() (t string, statusCode int)
 	}
+{{ end -}}
 
-	type {{ .Name }}Error byte
+{{ range .AllErrors -}}
+	type {{ .Type }} interface {
+		error
+		{{ range .Routes -}}
+			{{ .Route }}Error
+		{{ end -}}
+		{{ .PrivateType }}()
+	}
+{{ end -}}
 
-	{{ range .ResultErrors -}}
-		func (e *{{ .Type }}) {{ $route.Name }}Error() {{ $route.Name }}Error {
-			return {{ $route.Name }}Error(0)
-		}
+{{ range .AllErrors -}}
+	func (e *{{ .PrivateType }}Impl) {{ .PrivateType }}(){}
 
-		func (e *{{ .Type }}) {{ $route.HandlerName }}StatusCode() (t string, statusCode int) {
-			return "{{ .Type }}", {{ .StatusCode }}
+	{{ $error := . }}
+	{{ range .Routes -}}
+		func (e *{{ $error.PrivateType }}Impl) {{ .PrivateRoute }} (){}
+		func (e *{{ $error.PrivateType }}Impl) {{ .Route }}StatusCode() (t string, statusCode int) {
+			return "{{ $error.Type }}", {{ .StatusCode }}
 		}
 	{{ end -}}
 {{ end -}}

@@ -18,6 +18,7 @@ type routerData struct {
 	ModelPackage         string
 	BadRequestErrors     []string
 	InternalServerErrors []string
+	AllErrors            []errorTypeData
 }
 
 type routeData struct {
@@ -64,6 +65,18 @@ type errorData struct {
 	StatusCode int
 }
 
+type errorTypeData struct {
+	Type        string
+	PrivateType string
+	Routes      []errorRouteData
+}
+
+type errorRouteData struct {
+	Route        string
+	PrivateRoute string
+	StatusCode   int
+}
+
 // Router generates the model based on a definitions spec
 func Router(routerWriter, routeErrorsWriter io.Writer, paths *spec.Paths, readOnlyTypes map[string]bool, modelPackage string) (err error) {
 	var router routerData
@@ -89,7 +102,9 @@ func createRouter(paths *spec.Paths, readOnlyTypes map[string]bool) (router rout
 		return
 	}
 
-	sortRouter(router)
+	groupErrors(&router)
+
+	sortRouter(&router)
 
 	prevTag := ""
 	for i := range router.Routes {
@@ -622,9 +637,38 @@ func lowerStart(s string) string {
 	return strings.ToLower(s[:1]) + s[1:]
 }
 
+func groupErrors(router *routerData) {
+	routesMap := map[string][]errorRouteData{}
+
+	for _, route := range router.Routes {
+		for _, err := range route.ResultErrors {
+			routes, ok := routesMap[err.Type]
+			if !ok {
+				routes = []errorRouteData{}
+			}
+
+			routesMap[err.Type] = append(routes, errorRouteData{
+				Route:        route.HandlerName,
+				PrivateRoute: route.Name,
+				StatusCode:   err.StatusCode,
+			})
+		}
+	}
+
+	for name, routes := range routesMap {
+		router.AllErrors = append(router.AllErrors, errorTypeData{
+			Type:        name,
+			PrivateType: lowerStart(name),
+			Routes:      routes,
+		})
+	}
+}
+
 type routeByRoute []routeData
 type paramByLocationAndName []paramData
 type errorDataByStatusCode []errorData
+type errorByType []errorTypeData
+type errorByRoute []errorRouteData
 
 var methodOrder = map[string]int{
 	"GET":    0,
@@ -669,7 +713,19 @@ func (a errorDataByStatusCode) Less(i, j int) bool {
 	return a[i].StatusCode < a[j].StatusCode
 }
 
-func sortRouter(router routerData) {
+func (a errorByType) Len() int      { return len(a) }
+func (a errorByType) Swap(i, j int) { a[i], a[j] = a[j], a[i] }
+func (a errorByType) Less(i, j int) bool {
+	return a[i].Type < a[j].Type
+}
+
+func (a errorByRoute) Len() int      { return len(a) }
+func (a errorByRoute) Swap(i, j int) { a[i], a[j] = a[j], a[i] }
+func (a errorByRoute) Less(i, j int) bool {
+	return a[i].Route < a[j].Route
+}
+
+func sortRouter(router *routerData) {
 	sort.Sort(routeByRoute(router.Routes))
 
 	for _, r := range router.Routes {
@@ -679,4 +735,9 @@ func sortRouter(router routerData) {
 
 	sort.Strings(router.BadRequestErrors)
 	sort.Strings(router.InternalServerErrors)
+
+	for i := range router.AllErrors {
+		sort.Sort(errorByRoute(router.AllErrors[i].Routes))
+	}
+	sort.Sort(errorByType(router.AllErrors))
 }

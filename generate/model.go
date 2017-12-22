@@ -19,6 +19,7 @@ type modelData struct {
 type typeData struct {
 	// general fields
 	Name             string
+	PrivateName      string
 	Description      string
 	Validation       validation
 	HasReadOnlyProps bool
@@ -58,7 +59,8 @@ type propsData struct {
 }
 
 type errorsData struct {
-	Types []typeData
+	Types      []typeData
+	BaseErrors []string
 }
 
 type patternData struct {
@@ -80,7 +82,7 @@ func Model(modelWriter, validateWriter, errorsWriter io.Writer, definitions spec
 		return
 	}
 
-	if err = templates.Model.Execute(errorsWriter, errors); err != nil {
+	if err = templates.Errors.Execute(errorsWriter, errors); err != nil {
 		return
 	}
 
@@ -118,6 +120,7 @@ func createModel(definitions spec.Definitions) (model modelData, readOnlyTypes m
 	}
 
 	linkReferences(model.Types, errors.Types)
+	errors.BaseErrors = getReferences(errors.Types)
 
 	sortTypes(model.Types)
 	sortTypes(errors.Types)
@@ -141,11 +144,20 @@ func createTypeData(name, description string, schema spec.Schema) (t typeData, e
 	}
 
 	isError, _ := schema.Extensions.GetBool("x-error")
+	if isError {
+		_, isPrimitive := goPrimitives[goType]
+		if isSlice || (isPrimitive && goType != "string") {
+			err = errors.New("Errors can only be objects, strings, or references")
+			logger.Error(err)
+			return
+		}
+	}
 
 	logger = logger.WithField("type", goType)
 
 	t = typeData{
 		Name:        goFormat(name),
+		PrivateName: privateGoFormat(name),
 		Description: schema.Description,
 		Validation:  val,
 		IsError:     isError,
@@ -439,6 +451,24 @@ func linkReferences(types ...[]typeData) {
 			}
 		}
 	}
+}
+
+// This only works for references that are one level deep
+func getReferences(types []typeData) []string {
+	references := map[string]struct{}{}
+
+	for _, t := range types {
+		if t.Ref != nil {
+			references[t.Ref.Name] = struct{}{}
+		}
+	}
+
+	result := make([]string, 0, len(references))
+	for reference := range references {
+		result = append(result, reference)
+	}
+	sort.Strings(result)
+	return result
 }
 
 func listPatterns(model *modelData) {
