@@ -59,7 +59,8 @@ type propsData struct {
 }
 
 type errorsData struct {
-	Types []typeData
+	Types      []typeData
+	BaseErrors []string
 }
 
 type patternData struct {
@@ -119,6 +120,7 @@ func createModel(definitions spec.Definitions) (model modelData, readOnlyTypes m
 	}
 
 	linkReferences(model.Types, errors.Types)
+	errors.BaseErrors = getReferences(errors.Types)
 
 	sortTypes(model.Types)
 	sortTypes(errors.Types)
@@ -449,6 +451,24 @@ func linkReferences(types ...[]typeData) {
 			}
 		}
 	}
+}
+
+// This only works for references that are one level deep
+func getReferences(types []typeData) []string {
+	references := map[string]struct{}{}
+
+	for _, t := range types {
+		if t.Ref != nil {
+			references[t.Ref.Name] = struct{}{}
+		}
+	}
+
+	result := make([]string, 0, len(references))
+	for reference := range references {
+		result = append(result, reference)
+	}
+	sort.Strings(result)
+	return result
 }
 
 func listPatterns(model *modelData) {

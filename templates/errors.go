@@ -7,6 +7,10 @@ var Errors = parse("model",
 // This is a generated file
 // Manual changes will be overwritten
 
+{{ range .BaseErrors -}}
+	type {{ . }} interface{}
+{{ end }}
+
 {{ range .Types -}}
 	{{ if .IsStruct -}}
 		type {{ .PrivateName }}Impl struct {
@@ -34,10 +38,10 @@ var Errors = parse("model",
 					e.{{ .Name }},
 				{{- end -}}
 			})
-		{{ else if eq .Type "string" -}}
-			return string(*e)
+		{{ else if .Ref -}}
+			return (*{{ .Ref.PrivateName }}Impl)(e).Error()
 		{{ else -}}
-			return (*{{ .Type }})(e).Error()
+			return string(*e)
 		{{ end -}}
 	}
 
@@ -59,11 +63,12 @@ var Errors = parse("model",
 				{{ .JSONName }} {{ if .IsSlice }}[]{{ .ItemType }}{{ else }}{{ .Type }}{{ end }},
 			{{- end -}}
 		) {{ .Name }} {
-			return (*{{ .PrivateName }}Impl)(New{{ .Ref.Name }}(
+			base, _ := New{{ .Ref.Name }}(
 				{{- range .Ref.Props -}}
 					{{ .JSONName }},
 				{{ end -}}
-			))
+			).(*{{ .Ref.PrivateName }}Impl)
+			return (*{{ .PrivateName }}Impl)(base)
 		}
 	{{ else -}}
 		func New{{ .Name }}(s string) {{ .Name }} {
