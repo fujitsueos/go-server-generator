@@ -57,10 +57,10 @@ type Handler interface {
 // ErrorTransformer transforms errors in standard format into the format according to the swagger spec
 type ErrorTransformer interface {
 	{{ range .BadRequestErrors -}}
-		ValidationErrorsTo{{ if eq "string" . }}String{{ else }}{{ . }}{{ end }}(errs []string) {{ if eq "string" . }}String{{ else }}model.{{ . }}{{ end }}
+		ValidationErrorsTo{{ if eq "string" . }}String{{ else }}{{ . }}{{ end }}(errs []string) {{ if eq "string" . }}String{{ else }}*model.{{ . }}{{ end }}
 	{{ end -}}
 	{{ range .InternalServerErrors -}}
-		ErrorTo{{ if eq "string" . }}String{{ else }}{{ . }}{{ end }}(err error) {{ if eq "string" . }}string{{ else }}model.{{ . }}{{ end }}
+		ErrorTo{{ if eq "string" . }}String{{ else }}{{ . }}{{ end }}(err error) {{ if eq "string" . }}string{{ else }}*model.{{ . }}{{ end }}
 	{{ end -}}
 }
 

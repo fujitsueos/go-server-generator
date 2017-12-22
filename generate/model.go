@@ -19,6 +19,7 @@ type modelData struct {
 type typeData struct {
 	// general fields
 	Name             string
+	PrivateName      string
 	Description      string
 	Validation       validation
 	HasReadOnlyProps bool
@@ -80,7 +81,7 @@ func Model(modelWriter, validateWriter, errorsWriter io.Writer, definitions spec
 		return
 	}
 
-	if err = templates.Model.Execute(errorsWriter, errors); err != nil {
+	if err = templates.Errors.Execute(errorsWriter, errors); err != nil {
 		return
 	}
 
@@ -141,11 +142,20 @@ func createTypeData(name, description string, schema spec.Schema) (t typeData, e
 	}
 
 	isError, _ := schema.Extensions.GetBool("x-error")
+	if isError {
+		_, isPrimitive := goPrimitives[goType]
+		if isSlice || (isPrimitive && goType != "string") {
+			err = errors.New("Errors can only be objects, strings, or references")
+			logger.Error(err)
+			return
+		}
+	}
 
 	logger = logger.WithField("type", goType)
 
 	t = typeData{
 		Name:        goFormat(name),
+		PrivateName: privateGoFormat(name),
 		Description: schema.Description,
 		Validation:  val,
 		IsError:     isError,

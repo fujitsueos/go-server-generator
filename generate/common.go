@@ -51,7 +51,29 @@ func goFormat(name string) string {
 	}
 
 	// uppercase common initialisms
-	return handleCommonInitialisms(strings.Join(titleWords, ""))
+	return handleCommonInitialisms(strings.Join(titleWords, ""), false)
+}
+
+func privateGoFormat(name string) string {
+	// split by - and _
+	words := strings.FieldsFunc(name, func(r rune) bool {
+		return r == '-' || r == '_'
+	})
+
+	// capitalize first letter of each word
+	titleWords := make([]string, len(words))
+	for i := range words {
+		titleWords[i] = strings.Title(words[i])
+	}
+
+	// make first letter lowercase
+	fullName := strings.Join(titleWords, "")
+	if len(fullName) > 0 {
+		fullName = strings.ToLower(fullName[:1]) + fullName[1:]
+	}
+
+	// uppercase common initialisms, lowercase the first
+	return handleCommonInitialisms(fullName, true)
 }
 
 // these are taken from https://github.com/golang/lint/blob/master/lint.go
@@ -96,10 +118,29 @@ var commonInitialisms = map[string]bool{
 	"XSS":   true,
 }
 
-func handleCommonInitialisms(input string) string {
+func handleCommonInitialisms(input string, startLowercase bool) string {
 	var words []string
 
-	nextWordStart := 0
+	if startLowercase {
+		firstLowercase := 1
+		for firstLowercase < len(input) && unicode.IsUpper(rune(input[firstLowercase])) {
+			firstLowercase++
+		}
+		firstWordLength := firstLowercase
+		if firstLowercase < len(input) {
+			// The capital before the first lowercase is part of the second word
+			firstWordLength--
+		}
+		if firstWordLength > 1 {
+			word := strings.ToUpper(input[:firstWordLength])
+			if commonInitialisms[word] {
+				words = append(words, strings.ToLower(word))
+			}
+			input = input[firstWordLength:]
+		}
+	}
+
+	var nextWordStart int
 	for s := input; s != ""; s = s[nextWordStart:] {
 		nextWordStart = strings.IndexFunc(s[1:], unicode.IsUpper) + 1
 		if nextWordStart <= 0 {

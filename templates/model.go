@@ -1,6 +1,6 @@
 package templates
 
-// Model is a template for the model and errors file
+// Model is a template for the model file
 var Model = parse("model",
 	`{{/* Input: { Struct, ReadOnly } */ -}}
 {{ define "modelStruct" -}}
@@ -21,7 +21,7 @@ var Model = parse("model",
   }
 
   {{/* Note that (and .ReadOnly .Struct.Name) means (if .ReadOnly == "" then "" else .Struct.Name) */}}
-  {{ template "constructor" dict "Name" (printf "%s%s" .ReadOnly .Struct.Name) "NonReadOnlyName" (and .ReadOnly .Struct.Name) "Props" .Struct.Props "IsPointer" .Struct.IsError }}
+  {{ template "constructor" dict "Name" (printf "%s%s" .ReadOnly .Struct.Name) "NonReadOnlyName" (and .ReadOnly .Struct.Name) "Props" .Struct.Props }}
 {{ end -}}
 
 {{/* Input: { Slice, ReadOnly } */ -}}
@@ -30,24 +30,24 @@ var Model = parse("model",
   type {{ .ReadOnly }}{{ .Slice.Name }} []{{ .ReadOnly }}{{ .Slice.ItemType }}
 {{ end -}}
 
-{{/* Input: { Name, NonReadOnlyName, ReferenceName, Props, IsPointer } */ -}}
+{{/* Input: { Name, NonReadOnlyName, ReferenceName, Props } */ -}}
 {{ define "constructor" }}
-  // New{{ .Name }} returns a new {{ if .IsPointer}}*{{ end }}{{ .Name }}
+  // New{{ .Name }} returns a new {{ .Name }}
   func New{{ .Name }}(
     {{- range .Props -}}
       {{ if or $.NonReadOnlyName (not .IsReadOnly) -}}
         {{ .JSONName }} {{ if .IsSlice }}[]{{ .ItemType }}{{ else }}{{ .Type }}{{ end }},
       {{- end -}}
     {{ end -}}
-  ) {{ if .IsPointer}}*{{ end }}{{ .Name }} {
+  ) {{ .Name }} {
     {{ if .ReferenceName -}}
-      return {{ if .IsPointer}}(*{{ end }}{{ .Name }}{{ if .IsPointer}}){{ end }}(New{{ .ReferenceName }}(
+      return {{ .Name }}(New{{ .ReferenceName }}(
         {{- range .Props -}}
           {{ .JSONName }},
         {{- end -}}
       ))
     {{ else -}}
-      return {{ if .IsPointer }}&{{ end }}{{ .Name }}{
+      return {{ .Name }}{
         {{ if $.NonReadOnlyName -}}
           New{{ .NonReadOnlyName }}(
             {{- range .Props -}}
@@ -94,28 +94,8 @@ package model
     type {{ .Name }} {{ .Type }}
 
     {{ if .Ref -}}
-      {{ template "constructor" dict "Name" .Name "ReferenceName" .Ref.Name "Props" .Ref.Props "IsPointer" .IsError }}
+      {{ template "constructor" dict "Name" .Name "ReferenceName" .Ref.Name "Props" .Ref.Props }}
     {{ end -}}
-  {{ end -}}
-
-  {{ if .IsError -}}
-    func (e {{ .Name }}) Error() string {
-      {{ if or .IsStruct .IsSlice -}}
-        return spew.Sdump(struct{
-          {{ range .Props -}}
-            {{ .Name }} {{ if .IsSlice }}[]{{ .ItemType }}{{ else }}*{{ .Type }}{{ end }}
-          {{ end -}}
-        }{
-          {{- range .Props -}}
-            e.{{ .Name }},
-          {{- end -}}
-        })
-      {{ else if eq .Type "string" -}}
-        return string(e)
-      {{ else -}}
-        return {{ .Type }}(e).Error()
-      {{ end -}}
-    }
   {{ end -}}
 {{ end }}
 `)
