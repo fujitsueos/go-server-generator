@@ -194,7 +194,7 @@ func (m *middleware) {{ .Name }}(w http.ResponseWriter, r *http.Request, {{ if .
 		{{- end -}}
 	); handlerError != nil {
 		errorType, statusCode := handlerError.{{ .HandlerName }}StatusCode()
-		respondJSON(w, err, errorType, statusCode, errorTransformer)
+		respondJSON(w, handlerError, errorType, statusCode, errorTransformer)
 		return
 	}
 
