@@ -106,23 +106,19 @@ func (m *middleware) {{ .Name }}(w http.ResponseWriter, r *http.Request, {{ if .
 		}
 	}()
 
-	var (
-		{{ if .ResultType -}}
-			result model.{{ if .ReadOnlyResult }}ReadOnly{{ end }}{{ .ResultType }}
-		{{ end -}}
-		err error
-		{{ if or .ResultType .HasValidation -}}
-			errs []string
-		{{ end -}}
-	)
+	{{ if .ResultType -}}
+		var result model.{{ if .ReadOnlyResult }}ReadOnly{{ end }}{{ .ResultType }}
+	{{ end -}}
+	{{ if or .ResultType .HasValidation -}}
+		var errs []string
+	{{ end -}}
 
 	{{ if .HasQueryParams -}}
 		query := r.URL.Query()
 	{{ end -}}
 	{{ range .Params -}}
 		{{ if eq .Type "time.Time" -}}
-			var {{ .Name }} time.Time
-			if {{ .Name }}, err = time.Parse(time.RFC3339, {{ template "getParam" .Location }}("{{ .RawName }}")); err != nil {
+			if {{ .Name }}, err := time.Parse(time.RFC3339, {{ template "getParam" .Location }}("{{ .RawName }}")); err != nil {
 				log.WithFields(log.Fields{
 					"field": "{{ .RawName }}",
 					"value": {{ template "getParam" .Location }}("{{ .RawName }}"),
@@ -161,7 +157,7 @@ func (m *middleware) {{ .Name }}(w http.ResponseWriter, r *http.Request, {{ if .
 
 	{{ if .Body -}}
 		var {{ .Body.Name }} model.{{ .Body.Type }}
-		if err = json.NewDecoder(r.Body).Decode(&{{ .Body.Name }}); err != nil {
+		if err := json.NewDecoder(r.Body).Decode(&{{ .Body.Name }}); err != nil {
 			errs = append(errs, err.Error())
 			log.WithFields(log.Fields{
 				"bodyType": "{{ .Body.Type }}",
