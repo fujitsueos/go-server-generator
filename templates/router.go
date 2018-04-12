@@ -48,7 +48,7 @@ type Handler interface {
 		{{- end -}}
 	) (
 		{{- if .ResultType -}}
-			model.{{ if .ReadOnlyResult }}ReadOnly{{ end }}{{ .ResultType }},
+			{{ if .IsResultSlice }}[]{{ end }}model.{{ if .ReadOnlyResult }}ReadOnly{{ end }}{{ .ResultType }},
 		{{- end -}}
 		model.{{ .HandlerName }}Error)
 {{ end }}
@@ -107,7 +107,7 @@ func (m *middleware) {{ .Name }}(w http.ResponseWriter, r *http.Request, {{ if .
 	}()
 
 	{{ if .ResultType -}}
-		var result model.{{ if .ReadOnlyResult }}ReadOnly{{ end }}{{ .ResultType }}
+		var result {{ if .IsResultSlice }}[]{{ end }}model.{{ if .ReadOnlyResult }}ReadOnly{{ end }}{{ .ResultType }}
 	{{ end -}}
 	{{ if or .ResultType .HasValidation -}}
 		var errs []string
@@ -198,14 +198,14 @@ func (m *middleware) {{ .Name }}(w http.ResponseWriter, r *http.Request, {{ if .
 		if errs = result.Validate(); len(errs) > 0 {
 			err := errors.New("Invalid response data")
 			log.WithFields(log.Fields{
-				"dataType": "{{ if .ReadOnlyResult }}ReadOnly{{ end }}{{ .ResultType }}",
+				"dataType": "{{ if .IsResultSlice }}[]{{ end }}{{ if .ReadOnlyResult }}ReadOnly{{ end }}{{ .ResultType }}",
 				"error": strings.Join(errs, "\n"),
 			}).Error(err)
 			{{ template "unexpectedError" .CatchAllError -}}
 			return
 		}
 
-		respondJSON(w, result, "{{ if .ReadOnlyResult }}ReadOnly{{ end }}{{ .ResultType }}", http.StatusOK, errorTransformer)
+		respondJSON(w, result, "{{ if .IsResultSlice }}[]{{ end }}{{ if .ReadOnlyResult }}ReadOnly{{ end }}{{ .ResultType }}", http.StatusOK, errorTransformer)
 	{{- else -}}
 		w.Write([]byte("OK"))
 	{{- end }}
