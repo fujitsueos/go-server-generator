@@ -367,7 +367,6 @@ func createResultType(responses *spec.Responses, readOnlyTypes map[string]bool) 
 			hasSuccessResponse = true
 
 			if response.Schema != nil {
-				isResultSlice = false
 				schema := response.Schema
 				if len(response.Schema.Type) == 1 && response.Schema.Type[0] == "array" {
 					isResultSlice = true

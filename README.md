@@ -51,7 +51,7 @@ When generating code out of a swagger spec, it is good to know what works and wh
 Big parts of the spec are not implemented because we can survive without them. Some notable examples:
 
 - `schemes`, `consumes`, `produces`, `parameters`, `responses`, `securityDefinitions`, `security`, `tags` on top level are completely ignored by the generator, without warning.
-- All type definitions *must* be in `definitions`. This implies that an endpoint cannot return an array of some type; we need to create a type alias in `definitions` for that array instead. (Main reason is that this ensures every type has a unique name, which makes code generation much easier.)
+- All type definitions *must* be in `definitions`.
 - Only a subset of validation rules is implemented. Using a validation rule that is not supported results in an error.
 - Errors cannot use validation rules at all. (Errors are output only, so validation rules provide less value there.)
 - It is not allowed to reference an object that has read-only properties from another type definition, except for arrays that serve as type-aliases only. (We generate two Go types for an object with read-only properties, one with the read-only properties and one with the rest. Doing this for the transitive closure of the type hierarchy referencing an object with read-only properties is cumbersome and doesn't provide much value.)
