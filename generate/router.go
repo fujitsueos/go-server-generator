@@ -33,6 +33,7 @@ type routeData struct {
 	HasValidation  bool
 
 	ResultType      string
+	IsResultSlice   bool
 	ReadOnlyResult  bool
 	ResultErrors    []errorData
 	ValidationError *string
@@ -217,7 +218,7 @@ func createRouteData(method, path string, operation *spec.Operation, routeParame
 		r.HasValidation = (r.HasValidation || hasValidation)
 	}
 
-	r.ResultType, r.ReadOnlyResult, r.ResultErrors, err = createResultType(operation.Responses, readOnlyTypes)
+	r.ResultType, r.IsResultSlice, r.ReadOnlyResult, r.ResultErrors, err = createResultType(operation.Responses, readOnlyTypes)
 	r.ValidationError = getError(r.ResultErrors, http.StatusBadRequest)
 	r.CatchAllError = getError(r.ResultErrors, http.StatusInternalServerError)
 
@@ -341,7 +342,7 @@ func createParamData(location string, params map[string]*spec.Parameter) (data [
 	return
 }
 
-func createResultType(responses *spec.Responses, readOnlyTypes map[string]bool) (resultType string, readOnlyResult bool, resultErrors []errorData, err error) {
+func createResultType(responses *spec.Responses, readOnlyTypes map[string]bool) (resultType string, isResultSlice bool, readOnlyResult bool, resultErrors []errorData, err error) {
 	defer restoreLogger(logger)
 
 	hasSuccessResponse := false
@@ -366,7 +367,12 @@ func createResultType(responses *spec.Responses, readOnlyTypes map[string]bool) 
 			hasSuccessResponse = true
 
 			if response.Schema != nil {
-				if resultType, err = getRefName(response.Schema.Ref); err != nil {
+				schema := response.Schema
+				if len(response.Schema.Type) == 1 && response.Schema.Type[0] == "array" {
+					isResultSlice = true
+					schema = schema.Items.Schema
+				}
+				if resultType, err = getRefName(schema.Ref); err != nil {
 					return
 				}
 
