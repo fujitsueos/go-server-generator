@@ -241,66 +241,72 @@ func respondJSON(w http.ResponseWriter, data interface{}, dataType string, statu
 	}
 }
 
-func parseArray(s string) []string {
-	// we treat the empty string as an empty array, rather than an array with one empty element
-	if len(s) == 0 {
-		return []string{}
-	}
-	return strings.Split(s, ",")
-}
-
-func validateString(s, name string, minLength, maxLength *int, enum []string) (errs []string) {
-	if minLength != nil {
-		if len(s) < *minLength {
-			errs = append(errs, fmt.Sprintf("%s should be no shorter than %d characters", name, *minLength))
+{{ if .HasParameterArray -}}
+	func parseArray(s string) []string {
+		// we treat the empty string as an empty array, rather than an array with one empty element
+		if len(s) == 0 {
+			return []string{}
 		}
+		return strings.Split(s, ",")
 	}
+{{ end -}}
 
-	if maxLength != nil {
-		if len(s) > *maxLength {
-			errs = append(errs, fmt.Sprintf("%s should be no longer than %d characters", name, *maxLength))
-		}
-	}
-
-	if enum != nil {
-		found := false
-		for i := range enum {
-			if s == enum[i] {
-				found = true
-				break
+{{ if .HasParameterStringValidation -}}
+	func validateString(s, name string, minLength, maxLength *int, enum []string) (errs []string) {
+		if minLength != nil {
+			if len(s) < *minLength {
+				errs = append(errs, fmt.Sprintf("%s should be no shorter than %d characters", name, *minLength))
 			}
 		}
-		if !found {
-			errs = append(errs, fmt.Sprintf("%s is not an allowed value for %s", s, name))
+
+		if maxLength != nil {
+			if len(s) > *maxLength {
+				errs = append(errs, fmt.Sprintf("%s should be no longer than %d characters", name, *maxLength))
+			}
 		}
-	}
 
-	return
-	}
+		if enum != nil {
+			found := false
+			for i := range enum {
+				if s == enum[i] {
+					found = true
+					break
+				}
+			}
+			if !found {
+				errs = append(errs, fmt.Sprintf("%s is not an allowed value for %s", s, name))
+			}
+		}
 
+		return
+	}
+{{ end -}}
+
+{{ if .HasParameterArrayValidation -}}
 	func validateArray(a []string, name string, minItems, maxItems *int, uniqueItems bool) (errs []string) {
-	if minItems != nil {
-		if len(a) < *minItems {
-			errs = append(errs, fmt.Sprintf("%s should have no less than %d elements", name, *minItems))
-		}
-	}
-
-	if maxItems != nil {
-		if len(a) > *maxItems {
-			errs = append(errs, fmt.Sprintf("%s should have no more than %d elements", name, *maxItems))
-		}
-	}
-
-	if uniqueItems {
-		seen := map[string]struct{}{}
-		for _, elt := range a {
-			if _, duplicate := seen[elt]; duplicate {
-				errs = append(errs, fmt.Sprintf("%s occurs multiple times in %s", elt, name))
+		if minItems != nil {
+			if len(a) < *minItems {
+				errs = append(errs, fmt.Sprintf("%s should have no less than %d elements", name, *minItems))
 			}
-			seen[elt] = struct{}{}
 		}
-	}
 
-	return
-}
+		if maxItems != nil {
+			if len(a) > *maxItems {
+				errs = append(errs, fmt.Sprintf("%s should have no more than %d elements", name, *maxItems))
+			}
+		}
+
+		if uniqueItems {
+			seen := map[string]struct{}{}
+			for _, elt := range a {
+				if _, duplicate := seen[elt]; duplicate {
+					errs = append(errs, fmt.Sprintf("%s occurs multiple times in %s", elt, name))
+				}
+				seen[elt] = struct{}{}
+			}
+		}
+
+		return
+	}
+{{ end -}}
 `)
