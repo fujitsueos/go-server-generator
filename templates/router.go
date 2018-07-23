@@ -207,7 +207,9 @@ func (m *middleware) {{ .Name }}(w http.ResponseWriter, r *http.Request, {{ if .
 
 		respondJSON(w, result, "{{ if .IsResultSlice }}[]{{ end }}{{ if .ReadOnlyResult }}ReadOnly{{ end }}{{ .ResultType }}", http.StatusOK, errorTransformer)
 	{{- else -}}
-		w.Write([]byte("OK"))
+		if _, err := w.Write([]byte("OK")); err != nil {
+			log.WithField("error", err).Error("Failed to write OK response")
+		}
 	{{- end }}
 }
 
@@ -234,7 +236,9 @@ func respondJSON(w http.ResponseWriter, data interface{}, dataType string, statu
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(statusCode)
-	w.Write(response)
+	if _, err := w.Write(response); err != nil {
+		log.WithField("error", err).Error("Failed to write response")
+	}
 }
 
 func parseArray(s string) []string {
