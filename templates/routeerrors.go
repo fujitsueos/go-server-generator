@@ -26,16 +26,16 @@ package model
 		{{ end -}}
 		{{ .PrivateType }}()
 	}
-{{ end -}}
 
-{{ range .AllErrors -}}
 	func (e *{{ .PrivateType }}Impl) {{ .PrivateType }}(){}
 
-	{{ $error := . }}
+	const {{ .PrivateType }}Message = "{{ .Type }}"
+
+	{{ $privateType := .PrivateType }}
 	{{ range .Routes -}}
-		func (e *{{ $error.PrivateType }}Impl) {{ .PrivateRoute }} (){}
-		func (e *{{ $error.PrivateType }}Impl) {{ .Route }}StatusCode() (t string, statusCode int) {
-			return "{{ $error.Type }}", {{ .StatusCode }}
+		func (e *{{ $privateType }}Impl) {{ .PrivateRoute }} (){}
+		func (e *{{ $privateType }}Impl) {{ .Route }}StatusCode() (t string, statusCode int) {
+			return {{ $privateType }}Message, {{ .StatusCode }}
 		}
 	{{ end -}}
 {{ end -}}
