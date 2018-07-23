@@ -53,7 +53,7 @@ var Errors = parse("model",
 		) {{ .Name }} {
 			return &{{ .PrivateName }}Impl{
 				{{- range .Props -}}
-					{{ if not .IsSlice }}&{{ end }}{{ .JSONName }},
+					{{ .Name }}: {{ if not .IsSlice }}&{{ end }}{{ .JSONName }},
     		{{ end -}}
 			}
 		}

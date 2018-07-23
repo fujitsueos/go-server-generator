@@ -79,9 +79,9 @@ func NewServer(handler Handler, errorTransformer ErrorTransformer, reportPanic R
 	}
 
 	m := &middleware{
-		handler,
-		errorTransformer,
-		reportPanic,
+		handler: handler,
+		errorTransformer: errorTransformer,
+		reportPanic: reportPanic,
 	}
 
 	router := httprouter.New()

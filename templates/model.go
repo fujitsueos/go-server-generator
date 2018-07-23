@@ -49,7 +49,7 @@ var Model = parse("model",
     {{ else -}}
       return {{ .Name }}{
         {{ if $.NonReadOnlyName -}}
-          New{{ .NonReadOnlyName }}(
+          {{ .NonReadOnlyName }}: New{{ .NonReadOnlyName }}(
             {{- range .Props -}}
               {{ if not .IsReadOnly -}}
                 {{ .JSONName }},
@@ -58,13 +58,13 @@ var Model = parse("model",
           ),
           {{ range .Props -}}
             {{ if .IsReadOnly -}}
-              {{ if not .IsSlice }}&{{ end }}{{ .JSONName }},
+              {{ .Name }}: {{ if not .IsSlice }}&{{ end }}{{ .JSONName }},
             {{ end -}}
           {{ end -}}
         {{ else -}}
           {{ range .Props -}}
             {{ if not .IsReadOnly -}}
-              {{ if not .IsSlice }}&{{ end }}{{ .JSONName }},
+              {{ .Name }}: {{ if not .IsSlice }}&{{ end }}{{ .JSONName }},
             {{ end -}}
           {{ end -}}
         {{ end -}}
