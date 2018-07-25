@@ -57,7 +57,7 @@ var Validate = parse("validate", `
 							{{ end -}}
 						{{ end -}}
 					{{ end -}}
-				{{ end -}}
+				{{ end }}
 			{{ else }}{{/* .Type.IsSlice */ -}}
 				{{ template "validateSlice" dict "Validation" .Type.Validation.Array "Slice" "*s" "Name" .Type.Name "ItemType" (print .ReadOnly .Type.ItemType) "ItemValidation" .Type.ItemValidation "RegexpName" $.Type.Name -}}
 			{{ end -}}
