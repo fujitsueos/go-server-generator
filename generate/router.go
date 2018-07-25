@@ -14,11 +14,14 @@ import (
 )
 
 type routerData struct {
-	Routes               []routeData
-	ModelPackage         string
-	BadRequestErrors     []string
-	InternalServerErrors []string
-	AllErrors            []errorTypeData
+	Routes                       []routeData
+	ModelPackage                 string
+	BadRequestErrors             []string
+	InternalServerErrors         []string
+	AllErrors                    []errorTypeData
+	HasParameterArray            bool
+	HasParameterArrayValidation  bool
+	HasParameterStringValidation bool
 }
 
 type routeData struct {
@@ -102,6 +105,8 @@ func createRouter(paths *spec.Paths, readOnlyTypes map[string]bool) (router rout
 	if router.BadRequestErrors, router.InternalServerErrors, err = getErrorTypes(router.Routes); err != nil {
 		return
 	}
+
+	router.HasParameterArray, router.HasParameterArrayValidation, router.HasParameterStringValidation = getParametersChecks(router.Routes)
 
 	groupErrors(&router)
 
@@ -569,6 +574,34 @@ func getErrorTypes(routes []routeData) (validationErrors, catchAllErrors []strin
 		}
 
 		catchAllErrors = stringSetToList(catchAllErrorsSet)
+	}
+
+	return
+}
+
+// check if there is a parameter for some route that needs to parse/validate strings and/or arrays
+func getParametersChecks(routes []routeData) (hasArray, hasArrayValidation, hasStringValidation bool) {
+	for _, route := range routes {
+		for _, parameter := range route.Params {
+			if parameter.IsArray {
+				hasArray = true
+
+				if parameter.Validation.Array != nil {
+					hasArrayValidation = true
+				}
+
+				if parameter.ItemValidation != nil {
+					hasStringValidation = true
+				}
+			} else if parameter.Validation.String != nil {
+				hasStringValidation = true
+			}
+
+			// values can never become false again; return immediately
+			if hasArray && hasArrayValidation && hasStringValidation {
+				return
+			}
+		}
 	}
 
 	return

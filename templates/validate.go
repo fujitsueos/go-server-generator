@@ -18,21 +18,43 @@ var Validate = parse("validate", `
 						{{ if .IsRequired }}
 							if s.{{ .Name }} == nil {
 								errors = append(errors, "{{ .JSONName }} is required")
-							} else {
-								{{ if .IsSlice -}}
-									{{ template "validateSlice" dict "Validation" .Validation.Array "Slice" (print "s." .Name) "Name" .JSONName "ItemType" .ItemType "ItemValidation" .ItemValidation "RegexpName" (print $.Type.Name .Name) -}}
-								{{ else if eq .Type "int64" -}}
-									{{ template "validateInt64" dict "Validation" .Validation.Int "Int" (print "*s." .Name) "Name" .JSONName -}}
-								{{ else if eq .Type "float64" -}}
-									{{ template "validateFloat64" dict "Validation" .Validation.Number "Number" (print "*s." .Name) "Name" .JSONName -}}
-								{{ else if eq .Type "string" -}}
-									{{ template "validateString" dict "Validation" .Validation.String "String" (print "*s." .Name) "Name" .JSONName "RegexpName" (print $.Type.Name .Name) -}}
-								{{ else if not (eq .Type "bool" "time.Time") }}
+							}
+
+							{{- if .IsSlice -}}
+								{{ $else := templateAsString "validateSlice" (dict "Validation" .Validation.Array "Slice" (print "s." .Name) "Name" .JSONName "ItemType" .ItemType "ItemValidation" .ItemValidation "RegexpName" (print $.Type.Name .Name)) -}}
+								{{- if $else -}}
+									else {
+										{{ $else }}
+									}
+								{{ end -}}
+							{{- else if eq .Type "int64" -}}
+								{{ $else := templateAsString "validateInt64" (dict "Validation" .Validation.Int "Int" (print "*s." .Name) "Name" .JSONName) -}}
+								{{- if $else -}}
+									else {
+										{{ $else }}
+									}
+								{{ end -}}
+							{{- else if eq .Type "float64" -}}
+								{{ $else := templateAsString "validateFloat64" (dict "Validation" .Validation.Number "Number" (print "*s." .Name) "Name" .JSONName) -}}
+								{{- if $else -}}
+									else {
+										{{ $else }}
+									}
+								{{ end -}}
+							{{- else if eq .Type "string" -}}
+								{{ $else := templateAsString "validateString" (dict "Validation" .Validation.String "String" (print "*s." .Name) "Name" .JSONName "RegexpName" (print $.Type.Name .Name)) -}}
+								{{- if $else -}}
+									else {
+										{{ $else }}
+									}
+								{{ end -}}
+							{{- else if not (eq .Type "bool" "time.Time") -}}
+								else {
 									if e := s.{{ .Name }}.Validate(); len(e) > 0 {
 										errors = append(errors, e...)
 									}
-								{{ end -}}
-							}
+								}
+							{{ end -}}
 						{{ end -}}
 					{{ end -}}
 				{{ end -}}
