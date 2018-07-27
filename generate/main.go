@@ -1,11 +1,14 @@
 package generate
 
 import (
+	"io"
+	"io/ioutil"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 
+	"github.com/fujitsueos/go-server-generator/templates"
 	"github.com/go-openapi/loads"
 	"github.com/go-openapi/spec"
 	"github.com/go-openapi/strfmt"
@@ -54,6 +57,7 @@ func readValidSwagger(swaggerPath string) (swagger *spec.Swagger, err error) {
 
 func generateServer(path string, swagger *spec.Swagger) (err error) {
 	paths := []string{
+		"generated/swagger.go",
 		"generated/model/model.go",
 		"generated/model/validate.go",
 		"generated/model/errors.go",
@@ -71,6 +75,11 @@ func generateServer(path string, swagger *spec.Swagger) (err error) {
 			return
 		}
 		defer closeFile()
+	}
+
+	// turn swagger file into a Go string
+	if err = inlineSwaggerFile(path, files["swagger"]); err != nil {
+		return
 	}
 
 	// create the model and write to the model and validate files
@@ -112,6 +121,22 @@ func createOutputFile(swaggerPath, relativePath string) (file *os.File, packageN
 			log.Error(err)
 		}
 	}
+
+	return
+}
+
+func inlineSwaggerFile(swaggerPath string, file io.Writer) (err error) {
+	var swaggerFile io.Reader
+	if swaggerFile, err = os.Open(swaggerPath); err != nil {
+		return
+	}
+
+	var swaggerData []byte
+	if swaggerData, err = ioutil.ReadAll(swaggerFile); err != nil {
+		return
+	}
+
+	err = templates.Swagger.Execute(file, string(swaggerData))
 
 	return
 }
