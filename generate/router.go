@@ -617,11 +617,9 @@ func getError(errors []errorData, statusCode int) *string {
 }
 
 func stringSetToList(set map[string]struct{}) []string {
-	result := make([]string, len(set), len(set))
-	i := 0
+	result := []string{}
 	for s := range set {
-		result[i] = s
-		i++
+		result = append(result, s)
 	}
 	return result
 }
@@ -666,10 +664,6 @@ func mergeParams(params ...[]spec.Parameter) (m parameterMap) {
 	}
 
 	return
-}
-
-func upperStart(s string) string {
-	return strings.ToUpper(s[:1]) + s[1:]
 }
 
 func lowerStart(s string) string {
