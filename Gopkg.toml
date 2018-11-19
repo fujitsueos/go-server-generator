@@ -27,15 +27,19 @@
 
 [[constraint]]
   name = "github.com/go-openapi/loads"
+  version = "0.15.0"
 
 [[constraint]]
   name = "github.com/go-openapi/spec"
+  version = "0.15.0"
 
 [[constraint]]
   name = "github.com/go-openapi/strfmt"
+  version = "0.15.0"
 
 [[constraint]]
   name = "github.com/go-openapi/validate"
+  version = "0.15.0"
 
 [[constraint]]
   name = "github.com/julienschmidt/httprouter"
