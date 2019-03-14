@@ -252,6 +252,6 @@ var Validate = parse("validate", `
 	{{ end }}
 
 	{{ range .Patterns -}}
-		var regexp{{ .Name }} = regexp.MustCompile("{{ .Pattern }}")
+		var regexp{{ .Name }} = regexp.MustCompile(`+"`"+`{{ .Pattern }}`+"`"+`)
 	{{ end -}}
 `)
